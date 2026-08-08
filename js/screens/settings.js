@@ -134,7 +134,7 @@ export function render(container) {
         </section>
 
         <section class="settings-group text-center">
-          <h3 class="font-bold">משימות משפחתיות</h3>
+          <h3 class="font-bold">חיים משותפים</h3>
           <p class="text-sm text-secondary">גרסה ${CONFIG.VERSION}</p>
           <p class="text-sm text-secondary">נבנה עם 💜 עבור המשפחה</p>
         </section>
@@ -246,7 +246,7 @@ export function render(container) {
     }
     button.disabled = true;
     try {
-      await api.sendWhatsApp(phone, 'הודעת בדיקה ממשימות משפחתיות 🏠');
+      await api.sendWhatsApp(phone, 'הודעת בדיקה מחיים משותפים 🏠');
       showToast('הודעת הבדיקה נשלחה', 'success');
     } catch {
       // nanobotRequest already surfaced the failure.

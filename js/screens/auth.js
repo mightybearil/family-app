@@ -113,8 +113,8 @@ export function render(container, params = {}) {
 
   const TITLES = {
     login: { title: 'היי! חזרתם 👋', subtitle: 'הזינו קוד גישה' },
-    setup: { title: 'משימות משפחתיות', subtitle: 'ברוכים הבאים! הגדירו קוד גישה' },
-    confirm: { title: 'משימות משפחתיות', subtitle: 'אמתו את קוד הגישה' },
+    setup: { title: 'חיים משותפים', subtitle: 'ברוכים הבאים! הגדירו קוד גישה' },
+    confirm: { title: 'חיים משותפים', subtitle: 'אמתו את קוד הגישה' },
     'verify-current': { title: 'שינוי קוד גישה', subtitle: 'הזינו את הקוד הנוכחי' },
     'new-pin': { title: 'שינוי קוד גישה', subtitle: 'הזינו קוד חדש' }
   };

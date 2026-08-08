@@ -1,7 +1,7 @@
 {
-  "name": "משימות משפחתיות",
-  "short_name": "משימות",
-  "description": "ניהול משימות משפחתיות בקלות",
+  "name": "חיים משותפים",
+  "short_name": "חיים משותפים",
+  "description": "ניהול הבית והמשימות של שנינו, במקום אחד",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

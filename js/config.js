@@ -55,9 +55,30 @@ export const CONFIG = {
   }
 };
 
+/**
+ * When the app is served by its own backend, that origin is the backend — so
+ * default to it rather than making every device type the address in by hand.
+ * A device that skips this ends up silently local-only, which looks exactly
+ * like "my partner's tasks are missing".
+ *
+ * Static hosts are excluded because there is no API there; pointing at them
+ * would only produce failed requests. The API key is deliberately NOT defaulted:
+ * anyone can load this page, so a key baked into the bundle would hand the
+ * family's data to anyone who found the URL.
+ */
+function defaultBackendUrl() {
+  if (typeof window === 'undefined') return '';
+  const { origin, hostname, protocol } = window.location;
+  if (!protocol.startsWith('http')) return '';
+  const staticHost = hostname.endsWith('github.io') ||
+    hostname.endsWith('netlify.app') ||
+    hostname.endsWith('pages.dev');
+  return staticHost ? '' : origin;
+}
+
 /** User-editable settings. Persisted separately so a corrupt blob cannot clobber CONFIG. */
 export const settings = {
-  nanobotUrl: '',
+  nanobotUrl: defaultBackendUrl(),
   apiKey: '',
   theme: 'auto',
   autoUpdates: true,
@@ -112,7 +133,11 @@ export function loadSettings() {
   const stored = readJSON(CONFIG.STORAGE_KEYS.SETTINGS, null);
   if (stored && typeof stored === 'object') {
     for (const [key, expectedType] of Object.entries(SETTING_TYPES)) {
-      if (typeof stored[key] === expectedType) settings[key] = stored[key];
+      if (typeof stored[key] !== expectedType) continue;
+      // A device that ran an earlier build stored an empty URL. Letting that
+      // overwrite the computed default would keep it local-only forever.
+      if (key === 'nanobotUrl' && !stored[key].trim()) continue;
+      settings[key] = stored[key];
     }
     if (Array.isArray(stored.members)) {
       settings.members = CONFIG.DEFAULT_MEMBERS.map((fallback) => {

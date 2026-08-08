@@ -1,4 +1,4 @@
-const VERSION = 'v2';
+const VERSION = 'v3';
 const SHELL_CACHE = `family-app-shell-${VERSION}`;
 const RUNTIME_CACHE = `family-app-runtime-${VERSION}`;
 
