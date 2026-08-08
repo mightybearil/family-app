@@ -23,6 +23,9 @@ CREATE TABLE IF NOT EXISTS tasks (
   status TEXT DEFAULT 'pending' CHECK(status IN ('pending','in_progress','completed','overdue')),
   progress INTEGER DEFAULT 0 CHECK(progress >= 0 AND progress <= 100),
   due_date DATE,
+  -- Events need a clock time and a place; a plain task usually has neither.
+  due_time TEXT,
+  location TEXT,
   quantity INTEGER DEFAULT 1,
   created_by TEXT,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,

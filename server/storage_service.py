@@ -57,7 +57,15 @@ STATUSES = ("pending", "in_progress", "completed", "overdue")
 
 TASK_COLUMNS = (
     "id", "title", "description", "category", "assignee", "priority", "status",
-    "progress", "due_date", "quantity", "created_by", "created_at", "updated_at",
+    "progress", "due_date", "due_time", "location", "quantity", "created_by",
+    "created_at", "updated_at",
+)
+
+# Columns added after the first release. CREATE TABLE IF NOT EXISTS will not add
+# them to a database that already exists, so they are applied explicitly.
+MIGRATIONS = (
+    ("tasks", "due_time", "TEXT"),
+    ("tasks", "location", "TEXT"),
 )
 
 log = logging.getLogger("family-storage")
@@ -152,6 +160,17 @@ class Database:
                 conn.executescript(fh.read())
             conn.commit()
             log.info("Schema applied from %s", schema_path)
+        self._migrate(conn)
+
+    def _migrate(self, conn: sqlite3.Connection) -> None:
+        """Adds columns introduced after a database was first created."""
+        for table, column, coltype in MIGRATIONS:
+            existing = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
+            if column in existing:
+                continue
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {coltype}")
+            conn.commit()
+            log.info("Migrated: added %s.%s", table, column)
 
     @property
     def connection(self) -> sqlite3.Connection:
@@ -215,6 +234,23 @@ def clean_due_date(value) -> str | None:
     raise ValidationError(f"due_date is not a recognisable date: {value!r}")
 
 
+
+def clean_time(value) -> str | None:
+    """Accepts HH:MM (24h). Anything else is treated as no time rather than an error."""
+    if value in (None, ""):
+        return None
+    text = str(value).strip()
+    parts = text.split(":")
+    if len(parts) < 2:
+        return None
+    try:
+        hour, minute = int(parts[0]), int(parts[1])
+    except ValueError:
+        return None
+    if not (0 <= hour <= 23 and 0 <= minute <= 59):
+        return None
+    return f"{hour:02d}:{minute:02d}"
+
 def normalise_task(raw: dict) -> dict:
     if not isinstance(raw, dict):
         raise ValidationError("task must be an object")
@@ -247,6 +283,8 @@ def normalise_task(raw: dict) -> dict:
         "status": clean_enum(raw.get("status"), STATUSES, "pending"),
         "progress": clean_int(raw.get("progress"), low=0, high=100, fallback=0),
         "due_date": clean_due_date(raw.get("due_date")),
+        "due_time": clean_time(raw.get("due_time")),
+        "location": clean_text(raw.get("location"), "location", max_length=200) or None,
         "quantity": clean_int(raw.get("quantity"), low=1, high=9999, fallback=1),
         "created_by": clean_text(raw.get("created_by"), "created_by", max_length=64) or None,
         "created_at": created_at,

@@ -25,6 +25,8 @@ export function emptyTask(overrides = {}) {
     status: 'pending',
     progress: 0,
     due_date: null,
+    due_time: null,
+    location: '',
     quantity: 1,
     created_by: null,
     created_at: now,
@@ -44,6 +46,17 @@ function coerceTimestamp(value, fallback) {
   if (value == null || value === '') return fallback;
   const date = new Date(typeof value === 'number' ? value : String(value));
   return Number.isNaN(date.getTime()) ? fallback : date.toISOString();
+}
+
+/** Clock time as HH:MM, or null. Events carry one; most tasks do not. */
+function coerceTime(value) {
+  if (value == null || value === '') return null;
+  const match = String(value).trim().match(/^(\d{1,2}):(\d{2})/);
+  if (!match) return null;
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  if (hours > 23 || minutes > 59) return null;
+  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
 }
 
 /** Accepts any historical client shape and returns the canonical one. */
@@ -90,6 +103,8 @@ export function normalizeTask(input) {
     status: ['pending', 'in_progress', 'completed', 'overdue'].includes(input.status) ? input.status : 'pending',
     progress,
     due_date: coerceDateKey(input.due_date ?? input.dueDate),
+    due_time: coerceTime(input.due_time ?? input.dueTime),
+    location: String(input.location ?? '').trim(),
     quantity,
     created_by: input.created_by ?? input.createdBy ?? null,
     created_at: createdAt,

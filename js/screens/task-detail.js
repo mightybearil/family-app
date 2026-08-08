@@ -121,7 +121,17 @@ export async function render(container, params = {}) {
 
           <div class="field">
             <label class="input-label" for="task-due-date">תאריך יעד</label>
-            <input type="date" id="task-due-date" class="input" value="${task.due_date ?? ''}" />
+            <div class="settings-field-row">
+              <input type="date" id="task-due-date" class="input" value="${task.due_date ?? ''}" />
+              <input type="time" id="task-due-time" class="input input-inline"
+                     aria-label="שעה" value="${task.due_time ?? ''}" />
+            </div>
+          </div>
+
+          <div class="field" id="location-field" ${task.category === 'events' ? '' : raw('hidden')}>
+            <label class="input-label" for="task-location">מיקום</label>
+            <input type="text" id="task-location" class="input" placeholder="איפה?"
+                   value="${task.location}" maxlength="200" />
           </div>
 
           <div class="field">
@@ -203,6 +213,8 @@ export async function render(container, params = {}) {
   const progressInput = $('#task-progress');
   const progressVal = $('#progress-val');
   const dueInput = $('#task-due-date');
+  const timeInput = $('#task-due-time');
+  const locationInput = $('#task-location');
   const quantityInput = $('#task-quantity');
   const saveIndicator = $('#save-indicator');
   const headerTitle = $('#header-title');
@@ -227,6 +239,11 @@ export async function render(container, params = {}) {
         button.setAttribute('aria-checked', String(selected));
       });
     }
+
+    // Location is only meaningful for events; toggling visibility here keeps an
+    // unsaved new task intact, which re-rendering the screen would not.
+    const locationField = container.querySelector('#location-field');
+    if (locationField) locationField.hidden = task.category !== 'events';
 
     // Assignees are a multi-select: either of them, or both.
     container.querySelectorAll('#assignee-selector [data-val]').forEach((button) => {
@@ -318,6 +335,8 @@ export async function render(container, params = {}) {
     task.description = descInput.value;
     task.progress = Number.parseInt(progressInput.value, 10) || 0;
     task.due_date = dueInput.value || null;
+    task.due_time = timeInput.value || null;
+    if (locationInput) task.location = locationInput.value.trim();
     if (quantityInput) {
       task.quantity = Math.max(1, Number.parseInt(quantityInput.value, 10) || 1);
     }
@@ -362,6 +381,8 @@ export async function render(container, params = {}) {
   titleInput.addEventListener('input', triggerSave);
   descInput.addEventListener('input', () => { autoGrow(); triggerSave(); });
   dueInput.addEventListener('change', triggerSave);
+  timeInput.addEventListener('change', triggerSave);
+  locationInput?.addEventListener('input', triggerSave);
   quantityInput?.addEventListener('change', triggerSave);
   progressInput.addEventListener('input', (event) => {
     progressVal.textContent = `${event.target.value}%`;

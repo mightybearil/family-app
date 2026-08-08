@@ -3,6 +3,7 @@ import { html, raw } from '../utils.js';
 const ITEMS = [
   { key: 'home', href: '#/home', icon: '🏠', label: 'בית' },
   { key: 'tasks', href: '#/tasks', icon: '📋', label: 'משימות' },
+  { key: 'calendar', href: '#/calendar', icon: '📅', label: 'לוח שנה' },
   { key: 'shopping', href: '#/shopping', icon: '🛒', label: 'קניות' },
   { key: 'settings', href: '#/settings', icon: '⚙️', label: 'הגדרות' }
 ];

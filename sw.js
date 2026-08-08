@@ -1,4 +1,4 @@
-const VERSION = 'v4';
+const VERSION = 'v5';
 const SHELL_CACHE = `family-app-shell-${VERSION}`;
 const RUNTIME_CACHE = `family-app-runtime-${VERSION}`;
 
@@ -20,6 +20,7 @@ const SHELL_FILES = [
   './js/screens/home.js',
   './js/screens/task-list.js',
   './js/screens/task-detail.js',
+  './js/screens/calendar.js',
   './js/screens/shopping.js',
   './js/screens/settings.js',
   './assets/icons/icon-192.png',

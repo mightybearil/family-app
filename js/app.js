@@ -15,6 +15,7 @@ const ROUTES = [
   { pattern: '#/tasks', load: () => import('./screens/task-list.js') },
   { pattern: '#/tasks/:category', load: () => import('./screens/task-list.js') },
   { pattern: '#/task/:id', load: () => import('./screens/task-detail.js') },
+  { pattern: '#/calendar', load: () => import('./screens/calendar.js') },
   { pattern: '#/shopping', load: () => import('./screens/shopping.js') },
   { pattern: '#/settings', load: () => import('./screens/settings.js') }
 ];
