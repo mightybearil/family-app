@@ -1,0 +1,24 @@
+[Unit]
+Description=Back up the Family Tasks database and photo uploads
+Documentation=https://github.com/mightybearil/family-app
+
+[Service]
+Type=oneshot
+User=family-storage
+Group=family-storage
+ExecStart=/usr/bin/python3 /opt/family-app/backup.py
+Environment=FAMILY_APP_CONFIG=/etc/family-app/config.json
+Environment=FAMILY_APP_BACKUPS=/var/backups/family-app
+Environment=FAMILY_APP_BACKUP_KEEP=14
+Environment=PYTHONUNBUFFERED=1
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/backups/family-app
+ReadOnlyPaths=/var/lib/family-app
+RestrictAddressFamilies=AF_UNIX
+LockPersonality=true
+SystemCallArchitectures=native
+MemoryMax=192M

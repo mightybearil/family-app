@@ -21,9 +21,12 @@ Authentication
 
 from __future__ import annotations
 
+import base64
+import binascii
 import hmac
 import json
 import logging
+import mimetypes
 import os
 import sqlite3
 import sys
@@ -34,8 +37,19 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 CONFIG_PATH = os.environ.get("FAMILY_APP_CONFIG", "/etc/family-app/config.json")
 DEFAULT_DB = "/var/lib/family-app/family_tasks.db"
+DEFAULT_UPLOADS = "/var/lib/family-app/uploads"
 DEFAULT_PORT = 8901
-MAX_BODY_BYTES = 2 * 1024 * 1024
+# Photos arrive base64-encoded inside the JSON body, which inflates them ~33%.
+MAX_BODY_BYTES = 12 * 1024 * 1024
+MAX_PHOTO_BYTES = 6 * 1024 * 1024
+
+# Photos are stored on disk, not in SQLite: a few megabytes of BLOB per task
+# would bloat the database file and slow every unrelated query.
+PHOTO_TYPES = {
+    "image/jpeg": ".jpg",
+    "image/png": ".png",
+    "image/webp": ".webp",
+}
 
 CATEGORIES = ("house", "shopping", "general", "projects", "events")
 PRIORITIES = ("low", "medium", "high", "urgent")
@@ -74,9 +88,42 @@ def load_config() -> dict:
 
     cfg["apiToken"] = token
     cfg.setdefault("database", DEFAULT_DB)
+    cfg.setdefault("uploads", DEFAULT_UPLOADS)
     cfg.setdefault("port", DEFAULT_PORT)
     cfg.setdefault("host", "127.0.0.1")
     return cfg
+
+
+def decode_data_url(value) -> tuple[bytes, str]:
+    """
+    Accepts a data: URL or bare base64 and returns (bytes, extension).
+    Rejects anything that is not an image type we are willing to store.
+    """
+    if not isinstance(value, str) or not value.strip():
+        raise ValidationError("photo data is required")
+
+    text = value.strip()
+    mime = "image/jpeg"
+    if text.startswith("data:"):
+        header, _, payload = text.partition(",")
+        if not payload:
+            raise ValidationError("malformed data URL")
+        mime = header[5:].split(";")[0].strip().lower() or "image/jpeg"
+        text = payload
+
+    if mime not in PHOTO_TYPES:
+        raise ValidationError(f"unsupported image type: {mime}")
+
+    try:
+        raw = base64.b64decode(text, validate=True)
+    except (binascii.Error, ValueError) as exc:
+        raise ValidationError(f"photo is not valid base64: {exc}") from exc
+
+    if not raw:
+        raise ValidationError("photo is empty")
+    if len(raw) > MAX_PHOTO_BYTES:
+        raise ValidationError(f"photo exceeds {MAX_PHOTO_BYTES // (1024 * 1024)} MB")
+    return raw, PHOTO_TYPES[mime]
 
 
 # ------------------------------------------------------------------- database
@@ -202,8 +249,10 @@ def row_to_task(row: sqlite3.Row) -> dict:
 # -------------------------------------------------------------------- actions
 
 class Actions:
-    def __init__(self, db: Database):
+    def __init__(self, db: Database, uploads: str = DEFAULT_UPLOADS):
         self.db = db
+        self.uploads = uploads
+        os.makedirs(uploads, exist_ok=True)
 
     def dispatch(self, payload: dict) -> dict:
         action = payload.get("action")
@@ -287,11 +336,19 @@ class Actions:
     def do_delete_task(self, payload: dict) -> dict:
         task_id = clean_text(payload.get("taskId"), "taskId", max_length=64, required=True)
         rows = self.db.query("SELECT title FROM tasks WHERE id = ?", (task_id,))
-        # Comments, photos and links cascade via the schema's foreign keys.
+
+        # Rows cascade via the schema's foreign keys, but the files on disk do
+        # not — collect them before the delete or they are orphaned forever.
+        orphans = [r["path"] for r in
+                   self.db.query("SELECT path FROM photos WHERE task_id = ?", (task_id,))]
+
         self.db.execute("DELETE FROM tasks WHERE id = ?", (task_id,))
+        for stored_name in orphans:
+            self._remove_upload(stored_name)
+
         if rows:
             self._log_activity("delete_task", None, rows[0]["title"], None)
-        return {"deleted": bool(rows), "taskId": task_id}
+        return {"deleted": bool(rows), "taskId": task_id, "photosRemoved": len(orphans)}
 
     # -- comments ----------------------------------------------------------
 
@@ -324,6 +381,140 @@ class Actions:
         )
         self._log_activity("add_comment", comment["task_id"], comment["content"][:60], comment["author"])
         return {"comment": comment}
+
+    # -- links -------------------------------------------------------------
+
+    def do_get_links(self, payload: dict) -> dict:
+        task_id = clean_text(payload.get("taskId"), "taskId", max_length=64, required=True)
+        rows = self.db.query(
+            "SELECT id, task_id, url, title, added_by, created_at FROM links "
+            "WHERE task_id = ? ORDER BY created_at ASC",
+            (task_id,),
+        )
+        return {"links": [dict(r) for r in rows]}
+
+    def do_add_link(self, payload: dict) -> dict:
+        raw = payload.get("link") or {}
+        url = clean_text(raw.get("url"), "url", max_length=2000, required=True)
+        if not url.lower().startswith(("http://", "https://")):
+            raise ValidationError("url must be http or https")
+        link = {
+            "id": clean_text(raw.get("id") or str(uuid.uuid4()), "id", max_length=64),
+            "task_id": clean_text(raw.get("task_id") or payload.get("taskId"), "task_id",
+                                  max_length=64, required=True),
+            "url": url,
+            "title": clean_text(raw.get("title"), "title", max_length=200) or url,
+            "added_by": clean_text(raw.get("added_by"), "added_by", max_length=64) or None,
+            "created_at": clean_text(raw.get("created_at") or now_iso(), "created_at", max_length=40),
+        }
+        if not self.db.query("SELECT 1 FROM tasks WHERE id = ?", (link["task_id"],)):
+            raise ValidationError(f"no such task: {link['task_id']}")
+        self.db.execute(
+            "INSERT OR REPLACE INTO links (id, task_id, url, title, added_by, created_at) "
+            "VALUES (?,?,?,?,?,?)",
+            tuple(link[k] for k in ("id", "task_id", "url", "title", "added_by", "created_at")),
+        )
+        return {"link": link}
+
+    def do_delete_link(self, payload: dict) -> dict:
+        link_id = clean_text(payload.get("linkId"), "linkId", max_length=64, required=True)
+        self.db.execute("DELETE FROM links WHERE id = ?", (link_id,))
+        return {"deleted": True, "linkId": link_id}
+
+    # -- photos ------------------------------------------------------------
+
+    def do_get_photos(self, payload: dict) -> dict:
+        """Metadata only — callers fetch bytes per photo so a task with many
+        attachments does not force one enormous response."""
+        task_id = clean_text(payload.get("taskId"), "taskId", max_length=64, required=True)
+        rows = self.db.query(
+            "SELECT id, task_id, filename, uploaded_by, created_at FROM photos "
+            "WHERE task_id = ? ORDER BY created_at ASC",
+            (task_id,),
+        )
+        return {"photos": [dict(r) for r in rows]}
+
+    def do_get_photo(self, payload: dict) -> dict:
+        photo_id = clean_text(payload.get("photoId"), "photoId", max_length=64, required=True)
+        rows = self.db.query("SELECT * FROM photos WHERE id = ?", (photo_id,))
+        if not rows:
+            raise ValidationError(f"no such photo: {photo_id}")
+
+        stored = self._resolve_upload(rows[0]["path"])
+        try:
+            with open(stored, "rb") as fh:
+                raw = fh.read()
+        except OSError as exc:
+            raise ValidationError(f"photo file is missing: {exc}") from exc
+
+        mime = mimetypes.guess_type(stored)[0] or "image/jpeg"
+        return {"photo": {
+            "id": rows[0]["id"],
+            "task_id": rows[0]["task_id"],
+            "filename": rows[0]["filename"],
+            "created_at": rows[0]["created_at"],
+            "data": f"data:{mime};base64,{base64.b64encode(raw).decode('ascii')}",
+        }}
+
+    def do_add_photo(self, payload: dict) -> dict:
+        raw_photo = payload.get("photo") or {}
+        task_id = clean_text(raw_photo.get("task_id") or payload.get("taskId"),
+                             "task_id", max_length=64, required=True)
+        if not self.db.query("SELECT 1 FROM tasks WHERE id = ?", (task_id,)):
+            raise ValidationError(f"no such task: {task_id}")
+
+        blob, extension = decode_data_url(raw_photo.get("data") or raw_photo.get("path"))
+        photo_id = clean_text(raw_photo.get("id") or str(uuid.uuid4()), "id", max_length=64)
+
+        # The stored name is derived from the id, never from client input, so a
+        # crafted filename cannot escape the uploads directory.
+        stored_name = f"{uuid.uuid4().hex}{extension}"
+        target = os.path.join(self.uploads, stored_name)
+        os.makedirs(self.uploads, exist_ok=True)
+        with open(target, "wb") as fh:
+            fh.write(blob)
+        os.chmod(target, 0o600)
+
+        record = {
+            "id": photo_id,
+            "task_id": task_id,
+            "filename": clean_text(raw_photo.get("filename"), "filename", max_length=120) or stored_name,
+            "path": stored_name,
+            "uploaded_by": clean_text(raw_photo.get("uploaded_by"), "uploaded_by", max_length=64) or None,
+            "created_at": clean_text(raw_photo.get("created_at") or now_iso(), "created_at", max_length=40),
+        }
+        self.db.execute(
+            "INSERT OR REPLACE INTO photos (id, task_id, filename, path, uploaded_by, created_at) "
+            "VALUES (?,?,?,?,?,?)",
+            tuple(record[k] for k in ("id", "task_id", "filename", "path", "uploaded_by", "created_at")),
+        )
+        self._log_activity("add_photo", task_id, record["filename"], record["uploaded_by"])
+        log.info("stored photo %s (%d bytes) for task %s", photo_id, len(blob), task_id)
+        return {"photo": {k: v for k, v in record.items() if k != "path"}}
+
+    def do_delete_photo(self, payload: dict) -> dict:
+        photo_id = clean_text(payload.get("photoId"), "photoId", max_length=64, required=True)
+        rows = self.db.query("SELECT path FROM photos WHERE id = ?", (photo_id,))
+        self.db.execute("DELETE FROM photos WHERE id = ?", (photo_id,))
+        if rows:
+            self._remove_upload(rows[0]["path"])
+        return {"deleted": bool(rows), "photoId": photo_id}
+
+    # -- upload helpers ----------------------------------------------------
+
+    def _resolve_upload(self, stored_name: str) -> str:
+        """Join under the uploads dir and refuse anything that escapes it."""
+        base = os.path.realpath(self.uploads)
+        target = os.path.realpath(os.path.join(base, os.path.basename(str(stored_name))))
+        if not target.startswith(base + os.sep):
+            raise ValidationError("invalid photo path")
+        return target
+
+    def _remove_upload(self, stored_name: str) -> None:
+        try:
+            os.remove(self._resolve_upload(stored_name))
+        except (OSError, ValidationError) as exc:
+            log.warning("could not remove upload %s: %s", stored_name, exc)
 
     # -- activity ----------------------------------------------------------
 
@@ -438,12 +629,12 @@ def main() -> None:
 
     db = Database(config["database"], schema)
     Handler.config = config
-    Handler.actions = Actions(db)
+    Handler.actions = Actions(db, config["uploads"])
 
     server = ThreadingHTTPServer((config["host"], int(config["port"])), Handler)
     server.daemon_threads = True
-    log.info("Storage service on http://%s:%s  db=%s",
-             config["host"], config["port"], config["database"])
+    log.info("Storage service on http://%s:%s  db=%s  uploads=%s",
+             config["host"], config["port"], config["database"], config["uploads"])
     try:
         server.serve_forever()
     except KeyboardInterrupt:

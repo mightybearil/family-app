@@ -527,6 +527,19 @@ export const api = {
   },
 
   async getLinks(taskId) {
+    if (canReachServer()) {
+      try {
+        const data = await storageRequest({ action: 'get_links', taskId }, { quiet: true });
+        const links = data?.links ?? [];
+        writeCollection(KEYS.LINKS, [
+          ...readCollection(KEYS.LINKS).filter((l) => l.task_id !== taskId),
+          ...links
+        ]);
+        return links;
+      } catch {
+        // Fall back to the cached copy.
+      }
+    }
     return readCollection(KEYS.LINKS).filter((l) => l.task_id === taskId);
   },
 
@@ -541,15 +554,70 @@ export const api = {
     };
     writeCollection(KEYS.LINKS, [...readCollection(KEYS.LINKS), link]);
     logActivity('add_link', { taskId, details: link.title });
+
+    if (canReachServer()) {
+      try {
+        await storageRequest({ action: 'add_link', link }, { quiet: true });
+      } catch {
+        queueMutation('add_link', { link });
+      }
+    } else {
+      queueMutation('add_link', { link });
+    }
     return link;
   },
 
   async deleteLink(linkId) {
     writeCollection(KEYS.LINKS, readCollection(KEYS.LINKS).filter((l) => l.id !== linkId));
+    if (canReachServer()) {
+      try {
+        await storageRequest({ action: 'delete_link', linkId }, { quiet: true });
+      } catch {
+        queueMutation('delete_link', { linkId });
+      }
+    } else {
+      queueMutation('delete_link', { linkId });
+    }
   },
 
+  /**
+   * Returns photos with `path` holding a displayable data URL, whether they
+   * came from this device or the server, so screens render them the same way.
+   * Bytes are fetched per photo and cached locally — the metadata listing stays
+   * small, and an authenticated fetch is required, so an <img src> pointing at
+   * a public URL is never involved.
+   */
   async getPhotos(taskId) {
-    return readCollection(KEYS.PHOTOS).filter((p) => p.task_id === taskId);
+    const cached = readCollection(KEYS.PHOTOS);
+    if (!canReachServer()) return cached.filter((p) => p.task_id === taskId);
+
+    try {
+      const data = await storageRequest({ action: 'get_photos', taskId }, { quiet: true });
+      const remote = data?.photos ?? [];
+      const resolved = [];
+
+      for (const meta of remote) {
+        const known = cached.find((p) => p.id === meta.id && p.path);
+        if (known) {
+          resolved.push(known);
+          continue;
+        }
+        try {
+          const full = await storageRequest({ action: 'get_photo', photoId: meta.id }, { quiet: true });
+          if (full?.photo?.data) resolved.push({ ...meta, path: full.photo.data });
+        } catch {
+          // Skip this one; the others still render.
+        }
+      }
+
+      writeCollection(KEYS.PHOTOS, [
+        ...cached.filter((p) => p.task_id !== taskId),
+        ...resolved
+      ]);
+      return resolved;
+    } catch {
+      return cached.filter((p) => p.task_id === taskId);
+    }
   },
 
   /** Stores a downscaled data URL; throws 'storage-full' when the quota rejects it. */
@@ -562,14 +630,36 @@ export const api = {
       uploaded_by: store.getState('currentMember')?.id ?? null,
       created_at: new Date().toISOString()
     };
+
+    if (canReachServer()) {
+      // Upload first: if the server rejects it there is no point caching it.
+      await storageRequest({
+        action: 'add_photo',
+        photo: { ...photo, data: dataUrl }
+      });
+    }
+    // Deliberately not queued when offline. A queued photo would hold a second
+    // copy of its base64 in the same localStorage budget, and filling that
+    // budget would break syncing for tasks too — a far worse failure than one
+    // photo staying on the device that took it.
+
     const rows = [...readCollection(KEYS.PHOTOS), photo];
-    if (!writeCollection(KEYS.PHOTOS, rows)) throw new Error('storage-full');
+    if (!writeCollection(KEYS.PHOTOS, rows) && !canReachServer()) throw new Error('storage-full');
     logActivity('add_photo', { taskId, details: filename });
     return photo;
   },
 
   async deletePhoto(photoId) {
     writeCollection(KEYS.PHOTOS, readCollection(KEYS.PHOTOS).filter((p) => p.id !== photoId));
+    if (canReachServer()) {
+      try {
+        await storageRequest({ action: 'delete_photo', photoId }, { quiet: true });
+      } catch {
+        queueMutation('delete_photo', { photoId });
+      }
+    } else {
+      queueMutation('delete_photo', { photoId });
+    }
   },
 
   async getActivityLog(taskId = null, limit = 20) {

@@ -1,0 +1,14 @@
+[Unit]
+Description=Nightly Family Tasks backup
+Documentation=https://github.com/mightybearil/family-app
+
+[Timer]
+OnCalendar=*-*-* 03:30:00
+# Spread the load a little; nothing depends on the exact minute.
+RandomizedDelaySec=900
+# If the instance was asleep or rebooted at 03:30, still run once it is back.
+Persistent=true
+Unit=family-backup.service
+
+[Install]
+WantedBy=timers.target
