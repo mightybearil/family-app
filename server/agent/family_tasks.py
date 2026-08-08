@@ -219,13 +219,21 @@ ACTION_LABELS = {
 
 MEMBER_NAMES = {"member1": "אמיר", "member2": "יעל", "nanobot": "הבוט"}
 
+STATUS_LABELS = {"completed": "הושלם", "pending": "חזרה לפתוחה",
+                 "in_progress": "בתהליך", "overdue": "באיחור"}
+
+STATUS_ICONS = {"completed": "✅", "pending": "↩️", "in_progress": "🔄", "overdue": "⚠️"}
+
 
 def cmd_news(args) -> None:
     """
     Prints only what has happened since the last call, then advances a
     watermark. Deciding what is new is done here, deterministically, so the
-    agent's only job is to phrase it — it never has to remember what it
-    already announced, and it stays silent when there is nothing to say.
+    agent's only job is to relay it — it never has to remember what it already
+    announced, and it stays silent when there is nothing to say.
+
+    Lines are written ready to send, so the agent does not have to interpret
+    raw fields and risk paraphrasing a comment into something nobody wrote.
     """
     activity = call({"action": "get_activity", "limit": 50}).get("activity", [])
     try:
@@ -235,8 +243,7 @@ def cmd_news(args) -> None:
         last_seen = ""
 
     fresh = [a for a in activity if str(a.get("created_at") or "") > last_seen]
-    # Oldest first, so the summary reads in the order things happened.
-    fresh.reverse()
+    fresh.reverse()  # oldest first, so the summary reads in order
 
     if activity:
         newest = max(str(a.get("created_at") or "") for a in activity)
@@ -247,13 +254,41 @@ def cmd_news(args) -> None:
             fail(f"could not update the watermark: {exc}")
 
     # First ever run: record the position without announcing the whole history.
-    if not last_seen:
+    if not last_seen or not fresh:
         return
+
+    # Titles come from the task list, so a notification can say which task an
+    # event belongs to — "great work" means nothing without it.
+    titles = {t["id"]: t.get("title") or "" for t in
+              call({"action": "get_tasks", "filters": {}}).get("tasks", [])}
 
     for entry in fresh:
         who = MEMBER_NAMES.get(str(entry.get("actor")), "מישהו")
-        what = ACTION_LABELS.get(entry.get("action"), entry.get("action"))
-        print(f"{who} | {what} | {entry.get('details') or ''}")
+        action = entry.get("action")
+        details = (entry.get("details") or "").strip()
+        title = titles.get(entry.get("task_id"), "")
+
+        if action == "add_comment":
+            where = f' על "{title}"' if title else ""
+            print(f"💬 {who} הוסיפ/ה הערה{where}: {details}")
+        elif action == "create_task":
+            print(f"➕ {who} הוסיפ/ה משימה: {details or title}")
+        elif action == "update_status":
+            # details is stored as "<title>: <status>"
+            status = details.rsplit(":", 1)[-1].strip()
+            label = STATUS_LABELS.get(status, status)
+            name = title or details.rsplit(":", 1)[0].strip()
+            print(f"{STATUS_ICONS.get(status, '🔄')} {who}: \"{name}\" — {label}")
+        elif action == "add_photo":
+            where = f' ל"{title}"' if title else ""
+            print(f"📷 {who} הוסיפ/ה תמונה{where}")
+        elif action == "add_link":
+            where = f' ל"{title}"' if title else ""
+            print(f"🔗 {who} הוסיפ/ה קישור{where}: {details}")
+        elif action == "delete_task":
+            print(f"🗑️ {who} מחק/ה משימה: {details}")
+        else:
+            print(f"• {who} | {action} | {details}")
 
 
 def build_parser() -> argparse.ArgumentParser:

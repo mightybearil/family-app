@@ -444,7 +444,7 @@ class Actions:
             (comment["id"], comment["task_id"], comment["author"],
              comment["content"], comment["created_at"]),
         )
-        self._log_activity("add_comment", comment["task_id"], comment["content"][:60], comment["author"])
+        self._log_activity("add_comment", comment["task_id"], comment["content"][:200], comment["author"])
         return {"comment": comment}
 
     # -- links -------------------------------------------------------------
