@@ -23,8 +23,8 @@ const ROUTES = [
 const REDIRECTS = {
   '#/login': '#/auth',
   '#/projects': '#/tasks/projects',
-  '#/': '#/home',
-  '': '#/home'
+  '#/': '#/tasks',
+  '': '#/tasks'
 };
 
 export function navigateTo(hash) {
@@ -64,7 +64,7 @@ function isUnlocked() {
 let currentTeardown = null;
 
 async function handleRoute() {
-  const fullHash = window.location.hash || '#/home';
+  const fullHash = window.location.hash || '#/tasks';
   const [hashPath, queryString] = fullHash.split('?');
 
   const redirect = REDIRECTS[hashPath];
@@ -73,7 +73,7 @@ async function handleRoute() {
   store.setState('activeScreen', hashPath);
 
   if (!isUnlocked() && hashPath !== '#/auth') return navigateTo('#/auth');
-  if (isUnlocked() && hashPath === '#/auth') return navigateTo('#/home');
+  if (isUnlocked() && hashPath === '#/auth') return navigateTo('#/tasks');
 
   const appContainer = document.getElementById('app');
   if (!appContainer) return;

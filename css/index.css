@@ -1681,6 +1681,55 @@ p, h1, h2, h3, h4, h5, h6 {
 
 .task-content { cursor: pointer; }
 
+/* Dense list: the app opens straight onto every task, so rows are tightened to
+   fit more of the list on one screen than the roomier card layout allowed. */
+.task-list-dense .task-card {
+  padding: 10px var(--space-md);
+  margin-bottom: 6px;
+  border-radius: var(--radius-md);
+  align-items: center;
+}
+
+.task-list-dense .task-title {
+  margin-bottom: 2px;
+  font-size: var(--fs-base);
+}
+
+.task-list-dense .task-meta {
+  gap: var(--space-xs);
+  row-gap: 2px;
+}
+
+.task-list-dense .chip-cat {
+  padding: 1px 8px;
+  font-size: 11px;
+}
+
+/* A heading per category, so one long list still reads as grouped. */
+.task-group-heading {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  margin: var(--space-md) 0 var(--space-xs);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--cat-color, var(--text-secondary));
+}
+
+.task-group-heading:first-child { margin-top: 0; }
+
+.task-group-heading .task-group-count {
+  color: var(--text-tertiary);
+  font-weight: 400;
+}
+
+.task-group-heading::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
 .task-checkbox {
   background: transparent;
   font-size: 14px;

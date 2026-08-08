@@ -57,7 +57,7 @@ export async function render(container, params = {}) {
         </select>
       </div>
 
-      <main class="screen-content" id="task-list">
+      <main class="screen-content task-list-dense" id="task-list">
         <div class="loading-screen"><div class="spinner"></div></div>
       </main>
 
@@ -195,7 +195,36 @@ export async function render(container, params = {}) {
       return;
     }
 
-    listEl.innerHTML = filtered.map(taskCard).join('');
+    // Viewing everything: group under category headings so one long list still
+    // reads as organised. Any active filter or search means the user has already
+    // narrowed things down, so a flat list is clearer there.
+    const grouped = !category && activeFilter === 'all' && !searchQuery;
+
+    if (!grouped) {
+      listEl.innerHTML = filtered.map(taskCard).join('');
+      return;
+    }
+
+    const byCategory = new Map();
+    for (const task of filtered) {
+      if (!byCategory.has(task.category)) byCategory.set(task.category, []);
+      byCategory.get(task.category).push(task);
+    }
+
+    listEl.innerHTML = CONFIG.CATEGORIES
+      .filter((c) => byCategory.has(c.id))
+      .map((c) => {
+        const rows = byCategory.get(c.id);
+        const open = rows.filter((t) => t.status !== 'completed').length;
+        return html`
+          <h2 class="task-group-heading cat-${c.id}">
+            <span aria-hidden="true">${c.icon}</span>${c.name}
+            <span class="task-group-count">${open}</span>
+          </h2>
+          ${raw(rows.map(taskCard).join(''))}
+        `;
+      })
+      .join('');
   }
 
   async function toggleTask(taskId) {

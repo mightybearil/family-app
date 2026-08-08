@@ -205,6 +205,57 @@ def cmd_comment(args) -> None:
     print(f"נוספה הערה למשימה: {describe(task)}")
 
 
+
+WATERMARK_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "news-watermark")
+
+ACTION_LABELS = {
+    "create_task": "משימה חדשה",
+    "update_status": "עדכון סטטוס",
+    "add_comment": "הערה חדשה",
+    "add_photo": "תמונה חדשה",
+    "add_link": "קישור חדש",
+    "delete_task": "משימה נמחקה",
+}
+
+MEMBER_NAMES = {"member1": "אמיר", "member2": "יעל", "nanobot": "הבוט"}
+
+
+def cmd_news(args) -> None:
+    """
+    Prints only what has happened since the last call, then advances a
+    watermark. Deciding what is new is done here, deterministically, so the
+    agent's only job is to phrase it — it never has to remember what it
+    already announced, and it stays silent when there is nothing to say.
+    """
+    activity = call({"action": "get_activity", "limit": 50}).get("activity", [])
+    try:
+        with open(WATERMARK_FILE, encoding="utf-8") as fh:
+            last_seen = fh.read().strip()
+    except OSError:
+        last_seen = ""
+
+    fresh = [a for a in activity if str(a.get("created_at") or "") > last_seen]
+    # Oldest first, so the summary reads in the order things happened.
+    fresh.reverse()
+
+    if activity:
+        newest = max(str(a.get("created_at") or "") for a in activity)
+        try:
+            with open(WATERMARK_FILE, "w", encoding="utf-8") as fh:
+                fh.write(newest)
+        except OSError as exc:
+            fail(f"could not update the watermark: {exc}")
+
+    # First ever run: record the position without announcing the whole history.
+    if not last_seen:
+        return
+
+    for entry in fresh:
+        who = MEMBER_NAMES.get(str(entry.get("actor")), "מישהו")
+        what = ACTION_LABELS.get(entry.get("action"), entry.get("action"))
+        print(f"{who} | {what} | {entry.get('details') or ''}")
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Family Tasks bridge for the nanobot agent")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -232,6 +283,9 @@ def build_parser() -> argparse.ArgumentParser:
     p_reopen = sub.add_parser("reopen", help="reopen a completed task")
     p_reopen.add_argument("query")
     p_reopen.set_defaults(func=cmd_reopen)
+
+    p_news = sub.add_parser("news", help="activity since the last call; empty when nothing is new")
+    p_news.set_defaults(func=cmd_news)
 
     p_comment = sub.add_parser("comment", help="add a comment to a task")
     p_comment.add_argument("query")

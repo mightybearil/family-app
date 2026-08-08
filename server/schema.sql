@@ -87,6 +87,25 @@ CREATE INDEX IF NOT EXISTS idx_links_task ON links(task_id);
 CREATE INDEX IF NOT EXISTS idx_activity_task ON activity_log(task_id);
 CREATE INDEX IF NOT EXISTS idx_activity_created ON activity_log(created_at);
 
+-- Task assignees / משויכים למשימה
+-- A join table rather than a wider tasks row: a chore can belong to one of them
+-- or to both, and `tasks.assignee` can only hold a single member id.
+-- `tasks.assignee` is kept in sync with the first assignee so older readers and
+-- the existing foreign key still work.
+CREATE TABLE IF NOT EXISTS task_assignees (
+  task_id TEXT NOT NULL,
+  member_id TEXT NOT NULL,
+  PRIMARY KEY (task_id, member_id),
+  FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
+  FOREIGN KEY (member_id) REFERENCES members(id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_task_assignees_member ON task_assignees(member_id);
+
+-- Backfill from the single-assignee column for tasks created before this table.
+INSERT OR IGNORE INTO task_assignees (task_id, member_id)
+  SELECT id, assignee FROM tasks WHERE assignee IS NOT NULL AND assignee <> '';
+
 -- Insert default members / הוספת חברי ברירת מחדל
 INSERT OR IGNORE INTO members (id, name, avatar) VALUES ('member1', 'אמיר', '👨');
 INSERT OR IGNORE INTO members (id, name, avatar) VALUES ('member2', 'יעל', '👩');

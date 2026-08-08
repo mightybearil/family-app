@@ -141,7 +141,7 @@ export function render(container, params = {}) {
         localStorage.setItem(CONFIG.STORAGE_KEYS.CURRENT_MEMBER, member.id);
         sessionStorage.setItem(CONFIG.SESSION_KEYS.UNLOCKED, '1');
         store.setState('currentMember', member);
-        window.location.hash = '#/home';
+        window.location.hash = '#/tasks';
       });
     });
   }
@@ -293,7 +293,7 @@ export function render(container, params = {}) {
     const member = getMembers().find((m) => m.id === savedId);
     if (member) {
       store.setState('currentMember', member);
-      window.location.hash = '#/home';
+      window.location.hash = '#/tasks';
     } else {
       enteredPin = '';
       mode = 'member';
