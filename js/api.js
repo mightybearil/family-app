@@ -334,7 +334,13 @@ export async function storageRequest(instruction, { signal, quiet = false } = {}
         'Content-Type': 'application/json',
         ...(settings.apiKey ? { Authorization: `Bearer ${settings.apiKey}` } : {})
       },
-      body: JSON.stringify(instruction)
+      // Identity travels with every request: the activity feed and the group
+      // notifications name who acted, and without this they said "מישהו".
+      // Spread last so an explicit actor in the instruction still wins.
+      body: JSON.stringify({
+        actor: store.getState('currentMember')?.id ?? null,
+        ...instruction
+      })
     });
 
     if (response.status === 401) throw new Error('unauthorized');

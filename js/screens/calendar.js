@@ -192,6 +192,38 @@ export async function render(container) {
     cursor = new Date(cursor.getFullYear(), cursor.getMonth() + months, 1);
     draw();
   };
+
+  // Swipe the grid to change month.
+  //
+  // Direction follows the layout, not the LTR habit: later months sit to the
+  // left here, so dragging the sheet rightward pulls the next month into view,
+  // and dragging left pulls the previous one. That matches the arrows, where
+  // forward (←) is on the left.
+  const swipeArea = container.querySelector('.calendar-content');
+  let touch = null;
+
+  swipeArea.addEventListener('touchstart', (event) => {
+    if (event.touches.length !== 1) { touch = null; return; }
+    const point = event.changedTouches[0];
+    touch = { x: point.screenX, y: point.screenY, at: Date.now() };
+  }, { passive: true });
+
+  swipeArea.addEventListener('touchend', (event) => {
+    if (!touch) return;
+    const start = touch;
+    touch = null;
+
+    const point = event.changedTouches[0];
+    const dx = point.screenX - start.x;
+    const dy = point.screenY - start.y;
+
+    // Ignore slow drags and anything mostly vertical, so scrolling the day
+    // list below never flips the month by accident.
+    if (Date.now() - start.at > 700) return;
+    if (Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+
+    step(dx > 0 ? 1 : -1);
+  }, { passive: true });
   container.querySelector('#prev-month').addEventListener('click', () => step(-1));
   container.querySelector('#next-month').addEventListener('click', () => step(1));
   container.querySelector('#today-btn').addEventListener('click', () => {

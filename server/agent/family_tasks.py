@@ -72,6 +72,9 @@ def read_token() -> str:
 
 
 def call(payload: dict) -> dict:
+    # Anything the agent does is attributed to the bot, so the feed says "הבוט"
+    # rather than falling back to an anonymous "מישהו".
+    payload = {"actor": "nanobot", **payload}
     request = urllib.request.Request(
         API_URL,
         data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),

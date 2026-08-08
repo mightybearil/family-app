@@ -352,6 +352,20 @@ class Actions:
             grouped.setdefault(row["task_id"], []).append(row["member_id"])
         return grouped
 
+
+    @staticmethod
+    def _actor_of(payload: dict) -> str | None:
+        """
+        Who is making this request. Every mutation carries it, because the
+        activity feed and the WhatsApp notifications name the person who acted —
+        and without it they fell back to "מישהו", which is worse than useless
+        when there are only two people using the app.
+        """
+        actor = payload.get("actor")
+        if not isinstance(actor, str) or not actor.strip():
+            return None
+        return actor.strip()[:64]
+
     # -- health ------------------------------------------------------------
 
     def do_ping(self, _payload: dict) -> dict:
@@ -408,7 +422,8 @@ class Actions:
         )
 
         task["assignees"] = self._sync_assignees(task["id"], task.get("assignees") or [])
-        self._log_activity("create_task", task["id"], task["title"], task["created_by"])
+        self._log_activity("create_task", task["id"], task["title"],
+                           self._actor_of(payload) or task["created_by"])
         return {"task": task}
 
     def do_update_task(self, payload: dict) -> dict:
@@ -435,7 +450,8 @@ class Actions:
             merged["assignees"] = self._assignees_for([task_id]).get(task_id, [])
 
         if "status" in changes:
-            self._log_activity("update_status", task_id, f"{merged['title']}: {merged['status']}", None)
+            self._log_activity("update_status", task_id,
+                               f"{merged['title']}: {merged['status']}", self._actor_of(payload))
         return {"task": merged}
 
     def do_delete_task(self, payload: dict) -> dict:
@@ -452,7 +468,7 @@ class Actions:
             self._remove_upload(stored_name)
 
         if rows:
-            self._log_activity("delete_task", None, rows[0]["title"], None)
+            self._log_activity("delete_task", None, rows[0]["title"], self._actor_of(payload))
         return {"deleted": bool(rows), "taskId": task_id, "photosRemoved": len(orphans)}
 
     # -- comments ----------------------------------------------------------
@@ -484,7 +500,8 @@ class Actions:
             (comment["id"], comment["task_id"], comment["author"],
              comment["content"], comment["created_at"]),
         )
-        self._log_activity("add_comment", comment["task_id"], comment["content"][:200], comment["author"])
+        self._log_activity("add_comment", comment["task_id"], comment["content"][:200],
+                           comment["author"] or self._actor_of(payload))
         return {"comment": comment}
 
     # -- links -------------------------------------------------------------
@@ -593,7 +610,8 @@ class Actions:
             "VALUES (?,?,?,?,?,?)",
             tuple(record[k] for k in ("id", "task_id", "filename", "path", "uploaded_by", "created_at")),
         )
-        self._log_activity("add_photo", task_id, record["filename"], record["uploaded_by"])
+        self._log_activity("add_photo", task_id, record["filename"],
+                           record["uploaded_by"] or self._actor_of(payload))
         log.info("stored photo %s (%d bytes) for task %s", photo_id, len(blob), task_id)
         return {"photo": {k: v for k, v in record.items() if k != "path"}}
 
