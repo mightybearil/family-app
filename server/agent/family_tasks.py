@@ -294,6 +294,104 @@ def cmd_news(args) -> None:
             print(f"• {who} | {action} | {details}")
 
 
+
+def _today_local() -> "date":
+    """
+    Local calendar date in Israel. The container's TZ is set to Asia/Jerusalem,
+    but this falls back to the zone explicitly so a missing TZ env cannot make
+    the morning briefing talk about the wrong day.
+    """
+    from datetime import date, datetime
+    try:
+        from zoneinfo import ZoneInfo
+        return datetime.now(ZoneInfo("Asia/Jerusalem")).date()
+    except Exception:
+        return datetime.now().date()
+
+
+def cmd_briefing(args) -> None:
+    """
+    The morning picture: what is late, what is due, what is waiting. Written as
+    ready-to-send lines so the agent relays facts rather than reconstructing
+    them, and cannot invent a task that does not exist.
+    """
+    from datetime import timedelta
+
+    tasks = call({"action": "get_tasks", "filters": {}}).get("tasks", [])
+    open_tasks = [t for t in tasks if t.get("status") != "completed"]
+
+    if not open_tasks:
+        print("אין משימות פתוחות — הכול נקי!")
+        return
+
+    today = _today_local()
+    horizon = today + timedelta(days=int(args.days or 7))
+
+    def who(task):
+        names = [MEMBER_NAMES.get(a, a) for a in (task.get("assignees") or [])]
+        if len(names) > 1:
+            return "שניהם"
+        return names[0] if names else ""
+
+    def line(task):
+        bits = ["• " + (task.get("title") or "(ללא כותרת)")]
+        owner = who(task)
+        if owner:
+            bits.append("(" + owner + ")")
+        if task.get("due_date"):
+            when = task["due_date"][8:10] + "/" + task["due_date"][5:7]
+            if task.get("due_time"):
+                when += " " + task["due_time"]
+            bits.append("— " + when)
+        if task.get("location"):
+            bits.append("📍 " + task["location"])
+        return " ".join(bits)
+
+    def due_on(task):
+        return task.get("due_date") or ""
+
+    iso = today.isoformat()
+    overdue = sorted([t for t in open_tasks if due_on(t) and due_on(t) < iso], key=due_on)
+    today_items = [t for t in open_tasks if due_on(t) == iso]
+    soon = sorted([t for t in open_tasks if iso < due_on(t) <= horizon.isoformat()], key=due_on)
+    undated = [t for t in open_tasks if not due_on(t)]
+    # Anything dated past the horizon still has to be accounted for, or the
+    # headline count will not match the lines beneath it.
+    later = sorted([t for t in open_tasks if due_on(t) > horizon.isoformat()], key=due_on)
+
+    print("סך הכול " + str(len(open_tasks)) + " משימות פתוחות.")
+
+    if overdue:
+        print()
+        print("באיחור (" + str(len(overdue)) + "):")
+        for t in overdue:
+            print(line(t))
+    if today_items:
+        print()
+        print("להיום:")
+        for t in today_items:
+            print(line(t))
+    if soon:
+        print()
+        print("בימים הקרובים:")
+        for t in soon:
+            print(line(t))
+    if undated:
+        print()
+        print("ללא תאריך (" + str(len(undated)) + "):")
+        for t in undated[:8]:
+            print(line(t))
+        if len(undated) > 8:
+            print("• ...ועוד " + str(len(undated) - 8))
+    if later:
+        print()
+        print("בהמשך (" + str(len(later)) + "):")
+        for t in later[:4]:
+            print(line(t))
+        if len(later) > 4:
+            print("• ...ועוד " + str(len(later) - 4))
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Family Tasks bridge for the nanobot agent")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -321,6 +419,10 @@ def build_parser() -> argparse.ArgumentParser:
     p_reopen = sub.add_parser("reopen", help="reopen a completed task")
     p_reopen.add_argument("query")
     p_reopen.set_defaults(func=cmd_reopen)
+
+    p_brief = sub.add_parser("briefing", help="morning summary of open tasks")
+    p_brief.add_argument("--days", type=int, default=7, help="how far ahead counts as soon")
+    p_brief.set_defaults(func=cmd_briefing)
 
     p_news = sub.add_parser("news", help="activity since the last call; empty when nothing is new")
     p_news.set_defaults(func=cmd_news)
