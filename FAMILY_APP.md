@@ -317,6 +317,30 @@ and blue hues for contrast. Layout uses logical properties (`inset-inline-*`,
    edits to one task collapse into a single entry, and an item that keeps failing is retired to
    `family_failed_queue` after five attempts so it cannot block everything behind it.
 
+## WhatsApp Agent Bridge
+
+`server/agent/` connects the nanobot agent to the task database, so messages
+like *"תוסיף חלב לקניות"* create real rows both phones can see.
+
+- `family_tasks.py` is copied to the agent's workspace at `bin/` and run via the
+  agent's `exec` tool. The agent runs in a container, so it calls the public
+  HTTPS endpoint rather than `127.0.0.1:8901`, which is a different loopback
+  from inside a container.
+- `SKILL.md` is installed to `skills/family-tasks/` and teaches the agent when
+  and how to use the script. nanobot lists it in the agent's prompt automatically.
+- The API token lives in `bin/api-token` (mode 600, agent user only) rather than
+  being passed as an argument, so it never lands in prompts or session transcripts.
+
+**The bridge exposes no delete.** A model misreading a Hebrew message is a poor
+way to lose data, and deleting in the app is one tap with an undo. `list`, `add`,
+`done`, `reopen` and `comment` are all recoverable; deletion is not.
+
+Access control worth re-checking after any config change:
+`channels.whatsapp.allowFrom` must list only the family's numbers, and
+`groupPolicy` should stay `mention` so the bot ignores group chatter unless it
+is addressed directly — `open` means it acts on every message in any group it
+has been added to.
+
 ## Backups
 
 `server/backup.py` runs nightly at 03:30 UTC via `family-backup.timer`.
