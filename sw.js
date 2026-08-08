@@ -1,4 +1,4 @@
-const VERSION = 'v3';
+const VERSION = 'v4';
 const SHELL_CACHE = `family-app-shell-${VERSION}`;
 const RUNTIME_CACHE = `family-app-runtime-${VERSION}`;
 
@@ -70,6 +70,22 @@ async function cacheFirst(request, cacheName) {
   return response;
 }
 
+/** Fresh when online, cached when not — and the cache is refreshed on every hit. */
+async function networkFirstWithCache(request, cacheName) {
+  try {
+    const response = await fetch(request);
+    if (response.ok && response.type === 'basic') {
+      const cache = await caches.open(cacheName);
+      cache.put(request, response.clone());
+    }
+    return response;
+  } catch (error) {
+    const cached = await caches.match(request);
+    if (cached) return cached;
+    throw error;
+  }
+}
+
 self.addEventListener('fetch', (event) => {
   const { request } = event;
 
@@ -97,6 +113,19 @@ self.addEventListener('fetch', (event) => {
   if (url.origin !== self.location.origin) {
     // Fonts and other cross-origin assets: serve from cache, fall back to network.
     event.respondWith(cacheFirst(request, RUNTIME_CACHE).catch(() => caches.match(request)));
+    return;
+  }
+
+  // Code is network-first, assets are cache-first.
+  //
+  // Cache-first on scripts meant that forgetting to bump VERSION stranded every
+  // installed device on old JavaScript indefinitely — a deploy would appear to
+  // succeed while nobody actually received it. Network-first removes that whole
+  // failure mode: online devices always run the deployed code, and the cache is
+  // still there as the offline fallback. Images and icons rarely change and are
+  // the bulk of the bytes, so they stay cache-first.
+  if (/\.(?:js|mjs|css|html|json)$/.test(url.pathname) || url.pathname.endsWith('/')) {
+    event.respondWith(networkFirstWithCache(request, RUNTIME_CACHE));
     return;
   }
 
