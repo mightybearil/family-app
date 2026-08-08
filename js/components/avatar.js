@@ -52,7 +52,7 @@ export function avatar(person, size = '') {
     return raw(html`
       <span class="${className}">
         <img src="${person.photo}" alt="${person.name || ''}" data-fallback="${emoji}"
-             loading="lazy" decoding="async" />
+             decoding="async" />
       </span>
     `);
   }
@@ -71,7 +71,7 @@ export function avatarInline(person) {
   if (person.photo) {
     return raw(html`
       <span class="avatar-inline">
-        <img src="${person.photo}" alt="" data-fallback="${emoji}" loading="lazy" decoding="async" />
+        <img src="${person.photo}" alt="" data-fallback="${emoji}" decoding="async" />
       </span>
     `);
   }
