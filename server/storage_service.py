@@ -488,10 +488,18 @@ class Actions:
             "id": clean_text(raw.get("id") or str(uuid.uuid4()), "id", max_length=64),
             "task_id": clean_text(raw.get("task_id") or payload.get("taskId"), "task_id",
                                   max_length=64, required=True),
-            "author": clean_text(raw.get("author"), "author", max_length=64) or None,
+            "author": (clean_text(raw.get("author"), "author", max_length=64)
+                       or self._actor_of(payload)),
             "content": clean_text(raw.get("content"), "content", max_length=5000, required=True),
             "created_at": clean_text(raw.get("created_at") or now_iso(), "created_at", max_length=40),
         }
+        # comments.author is NOT NULL and a foreign key, so an unattributed
+        # comment must be refused with a clear message rather than surfacing as
+        # a database error the caller cannot act on.
+        if not comment["author"]:
+            raise ValidationError("author is required (send actor or comment.author)")
+        if not self.db.query("SELECT 1 FROM members WHERE id = ?", (comment["author"],)):
+            raise ValidationError(f"unknown author: {comment['author']}")
         if not self.db.query("SELECT 1 FROM tasks WHERE id = ?", (comment["task_id"],)):
             raise ValidationError(f"no such task: {comment['task_id']}")
         self.db.execute(

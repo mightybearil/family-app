@@ -112,3 +112,6 @@ INSERT OR IGNORE INTO task_assignees (task_id, member_id)
 -- Insert default members / הוספת חברי ברירת מחדל
 INSERT OR IGNORE INTO members (id, name, avatar) VALUES ('member1', 'אמיר', '👨');
 INSERT OR IGNORE INTO members (id, name, avatar) VALUES ('member2', 'יעל', '👩');
+-- The agent authors comments and activity of its own, and both columns are
+-- foreign keys into this table, so it needs a row like any other actor.
+INSERT OR IGNORE INTO members (id, name, avatar) VALUES ('nanobot', 'ננובוט', '🤖');
