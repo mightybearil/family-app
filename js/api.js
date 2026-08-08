@@ -184,6 +184,29 @@ function extractJson(content) {
   return null;
 }
 
+/**
+ * nanobot only accepts the exact model name it was configured with and rejects
+ * a generic "default", so the id is discovered from /v1/models once and cached.
+ */
+let cachedModel = null;
+
+async function resolveModel() {
+  if (cachedModel) return cachedModel;
+  try {
+    const response = await fetch(`${settings.nanobotUrl.replace(/\/+$/, '')}/v1/models`, {
+      headers: settings.apiKey ? { Authorization: `Bearer ${settings.apiKey}` } : {}
+    });
+    if (response.ok) {
+      const body = await response.json();
+      const id = body?.data?.[0]?.id;
+      if (id) cachedModel = id;
+    }
+  } catch {
+    // Fall through to the generic name; the request will surface any real error.
+  }
+  return cachedModel || 'default';
+}
+
 /** Posts a structured instruction to the nanobot agent and returns its JSON payload. */
 export async function nanobotRequest(instruction, { signal, quiet = false } = {}) {
   if (!isBackendConfigured()) throw new Error('backend-not-configured');
@@ -202,7 +225,7 @@ export async function nanobotRequest(instruction, { signal, quiet = false } = {}
         ...(settings.apiKey ? { Authorization: `Bearer ${settings.apiKey}` } : {})
       },
       body: JSON.stringify({
-        model: 'default',
+        model: await resolveModel(),
         temperature: 0,
         messages: [
           {
