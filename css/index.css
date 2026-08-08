@@ -1823,6 +1823,22 @@ p, h1, h2, h3, h4, h5, h6 {
 .legend-task    { background: var(--accent-success); }
 .legend-overdue { background: var(--accent-danger); }
 
+/* An event is the thing you cannot move, so it gets a star rather than another
+   dot — distinguishable by shape, not only by colour. */
+.legend-star {
+  font-style: normal;
+  font-size: 11px;
+  line-height: 1;
+  color: #F5B301;
+  /* A dark outline keeps the yellow legible on the selected day's coral fill. */
+  text-shadow: 0 0 1px rgba(0, 0, 0, 0.35);
+}
+
+.calendar-day.selected .legend-star {
+  color: #FFD84D;
+  outline: none;
+}
+
 .calendar-legend {
   display: flex;
   justify-content: center;

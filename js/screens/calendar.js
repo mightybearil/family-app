@@ -41,11 +41,19 @@ export async function render(container) {
   container.innerHTML = html`
     <div class="screen screen-with-nav">
       <header class="screen-header">
-        <button class="btn btn-icon btn-ghost" id="prev-month" type="button" aria-label="חודש קודם">›</button>
+        <!--
+          In a right-to-left layout the past sits to the right and the future to
+          the left, so "previous" is the right-hand control. The arrows are → and
+          ← rather than the ‹ › chevrons used before: those are bidi-mirrored
+          characters, so they silently rendered pointing the wrong way here.
+        -->
+        <button class="btn btn-icon btn-ghost" id="prev-month" type="button"
+                aria-label="חודש קודם">→</button>
         <h1 class="text-lg font-bold" id="month-label">לוח שנה</h1>
         <div class="flex-align-center gap-xs">
           <button class="btn btn-sm btn-ghost" id="today-btn" type="button">היום</button>
-          <button class="btn btn-icon btn-ghost" id="next-month" type="button" aria-label="חודש הבא">‹</button>
+          <button class="btn btn-icon btn-ghost" id="next-month" type="button"
+                  aria-label="חודש הבא">←</button>
         </div>
       </header>
 
@@ -56,7 +64,7 @@ export async function render(container) {
         <div class="calendar-grid" id="calendar-grid"></div>
 
         <div class="calendar-legend">
-          <span><i class="legend-dot legend-event"></i> אירוע</span>
+          <span><i class="legend-star">★</i> אירוע</span>
           <span><i class="legend-dot legend-task"></i> משימה</span>
           <span><i class="legend-dot legend-overdue"></i> באיחור</span>
         </div>
@@ -109,7 +117,7 @@ export async function render(container) {
                 type="button" data-date="${key}" aria-label="${key}">
           <span class="calendar-daynum">${date.getDate()}</span>
           <span class="calendar-dots">
-            ${events.length ? raw(html`<i class="legend-dot legend-event"></i>`) : ''}
+            ${events.length ? raw(html`<i class="legend-star">★</i>`) : ''}
             ${overdue.length ? raw(html`<i class="legend-dot legend-overdue"></i>`) : ''}
             ${plain > 0 ? raw(html`<i class="legend-dot legend-task"></i>`) : ''}
           </span>
