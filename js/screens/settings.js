@@ -2,6 +2,7 @@ import { CONFIG, settings, saveSettings, getMembers, isBackendConfigured } from 
 import { api, pendingSyncCount } from '../api.js';
 import { store } from '../store.js';
 import { bottomNav } from '../components/nav.js';
+import { avatar, avatarInline } from '../components/avatar.js';
 import { confirmDialog } from '../components/modal.js';
 import { html, raw, showToast, debounce } from '../utils.js';
 
@@ -22,7 +23,7 @@ export function render(container) {
           <h2 class="settings-group-title">פרופיל</h2>
           <div class="settings-item">
             <div class="flex-align-center gap-sm">
-              <span class="avatar avatar-lg" aria-hidden="true">${member?.avatar ?? '👤'}</span>
+              ${avatar(member, 'lg')}
               <span class="font-semibold">${member?.name ?? 'אורח'}</span>
             </div>
             <a class="btn btn-sm btn-outline" href="#/auth?member=1">החלף משתמש</a>
@@ -33,7 +34,7 @@ export function render(container) {
           <h2 class="settings-group-title">חברי המשפחה</h2>
           ${getMembers().map((m) => raw(html`
             <div class="settings-item settings-item-stack" data-member="${m.id}">
-              <span class="text-sm text-secondary">${m.avatar} ${m.name}</span>
+              <span class="text-sm text-secondary flex-align-center gap-xs">${avatarInline(m)} ${m.name}</span>
               <div class="settings-field-row">
                 <label class="sr-only" for="member-name-${m.id}">שם</label>
                 <input id="member-name-${m.id}" class="input" data-field="name" type="text"

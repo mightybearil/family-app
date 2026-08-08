@@ -1,6 +1,7 @@
 import { CONFIG, getCategory, getPriority, getMember, isCategory } from '../config.js';
 import { api, isOverdue } from '../api.js';
 import { bottomNav } from '../components/nav.js';
+import { avatarInline } from '../components/avatar.js';
 import { confirmDialog } from '../components/modal.js';
 import { html, raw, debounce, showToast, formatDueDate, toDateKey } from '../utils.js';
 
@@ -157,7 +158,7 @@ export async function render(container, params = {}) {
 
           <div class="task-meta">
             <span class="chip chip-cat cat-${cat.id}">${cat.icon} ${cat.name}</span>
-            ${assignee ? raw(html`<span class="task-assignee">${assignee.avatar} ${assignee.name}</span>`) : ''}
+            ${assignee ? raw(html`<span class="task-assignee">${avatarInline(assignee)} ${assignee.name}</span>`) : ''}
             ${task.due_date ? raw(html`
               <span class="task-due ${overdue ? 'overdue' : ''} ${dueSoon ? 'due-soon' : ''}">
                 📅 ${formatDueDate(task.due_date)}

@@ -1,4 +1,5 @@
 import { CONFIG, getMembers } from '../config.js';
+import { avatar } from '../components/avatar.js';
 import { store } from '../store.js';
 import { html, raw, readJSON, writeJSON, showToast } from '../utils.js';
 
@@ -126,7 +127,7 @@ export function render(container, params = {}) {
       <div class="member-select">
         ${getMembers().map((member) => raw(html`
           <button class="member-btn" type="button" data-id="${member.id}">
-            <span class="member-avatar" aria-hidden="true">${member.avatar}</span>
+            ${avatar(member, 'xl')}
             <span class="member-name">${member.name}</span>
           </button>
         `))}
@@ -150,7 +151,9 @@ export function render(container, params = {}) {
     const copy = TITLES[mode] || TITLES.login;
 
     screen.innerHTML = html`
-      <div class="auth-logo" aria-hidden="true">🏠</div>
+      ${CONFIG.COUPLE_PHOTO
+        ? raw(html`<img class="auth-portrait" src="${CONFIG.COUPLE_PHOTO}" alt="" decoding="async" />`)
+        : raw(html`<div class="auth-logo" aria-hidden="true">🏠</div>`)}
       <h1 class="auth-title">${copy.title}</h1>
       <p class="auth-subtitle">${copy.subtitle}</p>
       <p class="error-msg auth-error" role="alert">${errorMsg}</p>

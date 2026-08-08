@@ -1,6 +1,7 @@
 import { CONFIG, getCategory, getPriority, getStatus, getMembers, describeActor, isCategory } from '../config.js';
 import { api, emptyTask, isOverdue } from '../api.js';
 import { store } from '../store.js';
+import { avatar, avatarInline } from '../components/avatar.js';
 import { confirmDialog, promptDialog, openPhotoViewer } from '../components/modal.js';
 import { html, raw, safeUrl, debounce, showToast, formatRelativeTime, formatDateTime } from '../utils.js';
 
@@ -113,7 +114,7 @@ export async function render(container, params = {}) {
             <div class="chip-row" id="assignee-selector" role="radiogroup" aria-label="מוקצה ל">
               ${getMembers().map((m) => raw(html`
                 <button class="chip-toggle" type="button" data-val="${m.id}" role="radio"
-                        aria-checked="${m.id === task.assignee}">${m.avatar} ${m.name}</button>
+                        aria-checked="${m.id === task.assignee}">${avatarInline(m)} ${m.name}</button>
               `))}
             </div>
           </div>
@@ -269,7 +270,7 @@ export async function render(container, params = {}) {
       const mine = comment.author && comment.author === currentMember?.id;
       return html`
         <div class="comment-item ${mine ? 'mine' : ''}">
-          <span class="avatar avatar-sm" aria-hidden="true">${author.avatar}</span>
+          ${avatar(author, 'sm')}
           <div class="comment-content">
             <div class="comment-header">
               <span class="comment-author">${author.name}</span>

@@ -2,6 +2,7 @@ import { CONFIG, describeActor } from '../config.js';
 import { api, isOverdue } from '../api.js';
 import { store } from '../store.js';
 import { bottomNav } from '../components/nav.js';
+import { avatar } from '../components/avatar.js';
 import { html, raw, getGreeting, toDateKey, formatRelativeTime } from '../utils.js';
 
 const ACTIVITY_LABELS = {
@@ -108,7 +109,7 @@ export async function render(container) {
               const actor = describeActor(activity.actor);
               return raw(html`
                 <div class="activity-item">
-                  <span class="activity-icon" aria-hidden="true">${actor.avatar}</span>
+                  ${avatar(actor, 'sm')}
                   <div class="activity-content">
                     <div class="activity-text">
                       <strong>${actor.name}</strong>

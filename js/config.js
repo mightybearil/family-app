@@ -26,10 +26,14 @@ export const CONFIG = {
     { id: 'overdue', name: 'באיחור', icon: '⚠️' }
   ],
 
+  // `photo` is a real portrait; `avatar` stays as the fallback when none is set.
   DEFAULT_MEMBERS: [
-    { id: 'member1', name: 'אמיר', avatar: '👨', phone: '' },
-    { id: 'member2', name: 'יעל', avatar: '👩', phone: '' }
+    { id: 'member1', name: 'אמיר', avatar: '👨', photo: 'assets/people/amir.jpg', phone: '' },
+    { id: 'member2', name: 'יעל', avatar: '👩', photo: 'assets/people/yael.jpg', phone: '' }
   ],
+
+  // Shown on the lock screen. Empty string falls back to the 🏠 emoji.
+  COUPLE_PHOTO: 'assets/people/couple.jpg',
 
   STORAGE_KEYS: {
     PIN: 'family_pin',
@@ -100,8 +104,8 @@ export function getMember(id) {
 
 /** Display info for an actor id, including the agent and unknown members. */
 export function describeActor(id) {
-  if (id === 'nanobot') return { id, name: 'ננובוט', avatar: '🤖' };
-  return getMember(id) || { id: id || 'unknown', name: 'לא ידוע', avatar: '👤' };
+  if (id === 'nanobot') return { id, name: 'ננובוט', avatar: '🤖', photo: '' };
+  return getMember(id) || { id: id || 'unknown', name: 'לא ידוע', avatar: '👤', photo: '' };
 }
 
 export function loadSettings() {
@@ -117,6 +121,9 @@ export function loadSettings() {
           id: fallback.id,
           name: typeof saved.name === 'string' && saved.name.trim() ? saved.name.trim() : fallback.name,
           avatar: typeof saved.avatar === 'string' && saved.avatar ? saved.avatar : fallback.avatar,
+          // Portraits ship with the app, so the bundled path always wins over
+          // whatever an older settings blob happened to store.
+          photo: fallback.photo,
           phone: typeof saved.phone === 'string' ? saved.phone.trim() : ''
         };
       });
