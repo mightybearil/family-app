@@ -519,18 +519,50 @@ class Actions:
     # -- activity ----------------------------------------------------------
 
     def do_get_activity(self, payload: dict) -> dict:
+        """
+        Collapses repeats before returning. Completing a task, un-completing it
+        and completing it again is one fact — "it is done" — not three feed
+        entries, and a double-tap should never read as two separate events.
+
+        Deduplication happens on read rather than on write so the underlying log
+        stays a complete audit trail; only the presentation is condensed.
+        """
         limit = clean_int(payload.get("limit", 20), low=1, high=200, fallback=20)
         task_id = payload.get("taskId")
+
+        # Over-fetch: identical events collapse away, so reading exactly `limit`
+        # rows would return a short page whenever there are repeats.
+        fetch = min(limit * 5, 500)
         if task_id:
             rows = self.db.query(
                 "SELECT * FROM activity_log WHERE task_id = ? ORDER BY created_at DESC LIMIT ?",
-                (str(task_id)[:64], limit),
+                (str(task_id)[:64], fetch),
             )
         else:
             rows = self.db.query(
-                "SELECT * FROM activity_log ORDER BY created_at DESC LIMIT ?", (limit,)
+                "SELECT * FROM activity_log ORDER BY created_at DESC LIMIT ?", (fetch,)
             )
-        return {"activity": [dict(r) for r in rows]}
+
+        seen: set[tuple] = set()
+        activity = []
+        for row in rows:
+            entry = dict(row)
+            # Rows arrive newest-first, so the first occurrence is the one to keep.
+            # Status changes ignore the details, collapsing a done/undone/done
+            # sequence to where the task actually ended up. Other actions keep
+            # details in the key, since two different comments are two events.
+            if entry.get("action") == "update_status":
+                key = (entry.get("task_id"), "update_status", entry.get("actor"))
+            else:
+                key = (entry.get("task_id"), entry.get("action"),
+                       entry.get("actor"), entry.get("details"))
+            if key in seen:
+                continue
+            seen.add(key)
+            activity.append(entry)
+            if len(activity) >= limit:
+                break
+        return {"activity": activity}
 
     def do_get_members(self, _payload: dict) -> dict:
         rows = self.db.query("SELECT id, name, avatar, phone FROM members ORDER BY id")

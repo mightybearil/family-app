@@ -145,6 +145,29 @@ function queueMutation(action, payload) {
 
 /* -------------------------------------------------------------- activity */
 
+/**
+ * Collapses repeated events, keeping the most recent of each. Expects rows in
+ * newest-first order, which is how both the local log and the server return them.
+ */
+function dedupeActivity(rows) {
+  const seen = new Set();
+  const result = [];
+  for (const row of rows) {
+    // Status changes ignore the details, so done/undone/done collapses to where
+    // the task actually ended up. Other actions keep details in the key, since
+    // two different comments are two genuine events.
+    // JSON.stringify keys the fields unambiguously — a separator character
+    // could otherwise collide with text inside a task title.
+    const key = row.action === 'update_status'
+      ? JSON.stringify([row.task_id, 'update_status', row.actor])
+      : JSON.stringify([row.task_id, row.action, row.actor, row.details]);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push(row);
+  }
+  return result;
+}
+
 export function logActivity(action, { taskId = null, details = '', actor = null, source = 'user' } = {}) {
   const rows = readCollection(KEYS.ACTIVITY);
   rows.unshift({
@@ -662,9 +685,31 @@ export const api = {
     }
   },
 
+  /**
+   * Recent activity, with repeats collapsed: toggling a task done, undone and
+   * done again is one fact, not three feed entries, and a double-tap is not two
+   * events. The log itself keeps every row; only this view is condensed.
+   *
+   * Reads from the server when one is configured, so both phones see the same
+   * feed — a purely local feed would only ever show your own actions.
+   */
   async getActivityLog(taskId = null, limit = 20) {
+    if (canReachServer()) {
+      try {
+        const data = await storageRequest(
+          { action: 'get_activity', taskId, limit }, { quiet: true }
+        );
+        const activity = data?.activity ?? [];
+        if (activity.length) writeCollection(KEYS.ACTIVITY, activity);
+        return activity;
+      } catch {
+        // Fall through to the local copy.
+      }
+    }
+
     const rows = readCollection(KEYS.ACTIVITY);
-    return (taskId ? rows.filter((r) => r.task_id === taskId) : rows).slice(0, limit);
+    const scoped = taskId ? rows.filter((r) => r.task_id === taskId) : rows;
+    return dedupeActivity(scoped).slice(0, limit);
   },
 
   /* -------------------------------------------------------------- sync */
