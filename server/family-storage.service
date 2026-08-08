@@ -1,0 +1,34 @@
+[Unit]
+Description=Family Tasks storage service (SQLite CRUD API)
+Documentation=https://github.com/mightybearil/family-app
+After=network.target
+
+[Service]
+Type=simple
+User=family-storage
+Group=family-storage
+ExecStart=/usr/bin/python3 /opt/family-app/storage_service.py
+Environment=FAMILY_APP_CONFIG=/etc/family-app/config.json
+Environment=FAMILY_APP_SCHEMA=/opt/family-app/schema.sql
+Environment=PYTHONUNBUFFERED=1
+Restart=always
+RestartSec=5
+
+# The service needs nothing except its own database directory.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/family-app
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6
+RestrictNamespaces=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+SystemCallArchitectures=native
+MemoryMax=128M
+
+[Install]
+WantedBy=multi-user.target

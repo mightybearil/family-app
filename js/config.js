@@ -59,6 +59,8 @@ export const settings = {
   autoUpdates: true,
   whatsappReminders: false,
   dailySummaryTime: '20:00',
+  // Set once this device has uploaded its local tasks to a backend.
+  serverMigratedAt: '',
   members: CONFIG.DEFAULT_MEMBERS.map((member) => ({ ...member }))
 };
 
@@ -68,7 +70,8 @@ const SETTING_TYPES = {
   theme: 'string',
   autoUpdates: 'boolean',
   whatsappReminders: 'boolean',
-  dailySummaryTime: 'string'
+  dailySummaryTime: 'string',
+  serverMigratedAt: 'string'
 };
 
 export function getCategory(id) {
@@ -124,6 +127,11 @@ export function loadSettings() {
 }
 
 export function saveSettings(patch) {
+  // Pointing at a different backend means this device has never synced with it,
+  // so its local tasks must be uploaded again.
+  if ('nanobotUrl' in patch && patch.nanobotUrl !== settings.nanobotUrl && !('serverMigratedAt' in patch)) {
+    settings.serverMigratedAt = '';
+  }
   Object.assign(settings, patch);
   writeJSON(CONFIG.STORAGE_KEYS.SETTINGS, settings);
   if ('theme' in patch) applyTheme(settings.theme);

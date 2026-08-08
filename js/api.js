@@ -1,4 +1,4 @@
-import { CONFIG, settings, isBackendConfigured, isCategory } from './config.js';
+import { CONFIG, settings, saveSettings, isBackendConfigured, isCategory } from './config.js';
 import { generateId, readJSON, writeJSON, showToast, toDateKey } from './utils.js';
 import { store } from './store.js';
 
@@ -261,6 +261,54 @@ export async function nanobotRequest(instruction, { signal, quiet = false } = {}
   }
 }
 
+/**
+ * Deterministic CRUD against the SQLite storage service.
+ *
+ * Task data deliberately does NOT go through the language model: an LLM
+ * recalling a list can drop or invent entries, its transcript is per-session
+ * (so two phones would never share one list), and it eventually truncates.
+ * nanobotRequest above is kept for the things a model is actually good at.
+ */
+export async function storageRequest(instruction, { signal, quiet = false } = {}) {
+  if (!isBackendConfigured()) throw new Error('backend-not-configured');
+  if (!navigator.onLine) throw new Error('offline');
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  signal?.addEventListener('abort', () => controller.abort(), { once: true });
+
+  try {
+    const response = await fetch(`${settings.nanobotUrl.replace(/\/+$/, '')}/api`, {
+      method: 'POST',
+      signal: controller.signal,
+      headers: {
+        'Content-Type': 'application/json',
+        ...(settings.apiKey ? { Authorization: `Bearer ${settings.apiKey}` } : {})
+      },
+      body: JSON.stringify(instruction)
+    });
+
+    if (response.status === 401) throw new Error('unauthorized');
+    if (!response.ok) throw new Error(`API ${response.status}`);
+
+    const body = await response.json();
+    if (!body.success) throw new Error(body.error || 'request-failed');
+    return body.data ?? {};
+  } catch (error) {
+    if (!quiet) {
+      const messages = {
+        unauthorized: 'מפתח ה-API שגוי',
+        offline: 'אין חיבור לאינטרנט'
+      };
+      showToast(messages[error.message] ||
+        (error.name === 'AbortError' ? 'השרת לא הגיב בזמן' : 'תקשורת עם השרת נכשלה'), 'error');
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 const canReachServer = () => isBackendConfigured() && navigator.onLine;
 
 /* ------------------------------------------------------------------- api */
@@ -270,17 +318,50 @@ export const api = {
     return !isBackendConfigured();
   },
 
+  /**
+   * Uploads tasks this device holds that the server has never seen. Runs once,
+   * the first time a device connects to a backend, so switching from local-only
+   * mode does not silently discard existing tasks. It must not run repeatedly:
+   * a task deleted on another phone still exists in this device's cache, and
+   * re-uploading it every sync would resurrect it forever.
+   */
+  async migrateLocalTasks() {
+    if (!canReachServer() || settings.serverMigratedAt) return { uploaded: 0 };
+
+    const data = await storageRequest({ action: 'get_tasks', filters: {} }, { quiet: true });
+    const remoteIds = new Set((data?.tasks ?? []).map((t) => t.id));
+    const localOnly = readTasks().filter((task) => !remoteIds.has(task.id));
+
+    let uploaded = 0;
+    for (const task of localOnly) {
+      try {
+        await storageRequest({ action: 'create_task', task }, { quiet: true });
+        uploaded++;
+      } catch {
+        // Leave the flag unset so the migration is retried on the next connect.
+        return { uploaded };
+      }
+    }
+
+    saveSettings({ serverMigratedAt: new Date().toISOString() });
+    if (uploaded > 0) showToast(`הועלו ${uploaded} משימות לשרת`, 'success');
+    return { uploaded };
+  },
+
   async getTasks(filters = {}) {
     let tasks = readTasks();
 
     if (canReachServer()) {
       try {
-        const data = await nanobotRequest({ action: 'get_tasks', filters }, { quiet: true });
+        if (!settings.serverMigratedAt) await this.migrateLocalTasks();
+        // Ask for everything and filter locally, so the cache mirrors the server
+        // rather than holding only the slice matching the current screen.
+        const data = await storageRequest({ action: 'get_tasks', filters: {} }, { quiet: true });
         const remote = (data?.tasks ?? []).map(normalizeTask).filter(Boolean);
-        if (remote.length) {
-          writeTasks(remote);
-          tasks = remote;
-        }
+        // Once migrated the server is authoritative, including when it is empty:
+        // that is how a delete on the other phone reaches this one.
+        writeTasks(remote);
+        tasks = remote;
       } catch {
         // Local cache is the fallback; the queue will reconcile later.
       }
@@ -296,7 +377,7 @@ export const api = {
     const local = readTasks().find((t) => t.id === taskId) || null;
     if (!canReachServer()) return local;
     try {
-      const data = await nanobotRequest({ action: 'get_task', taskId }, { quiet: true });
+      const data = await storageRequest({ action: 'get_task', taskId }, { quiet: true });
       const remote = normalizeTask(data?.task);
       if (!remote) return local;
       const tasks = readTasks();
@@ -323,7 +404,7 @@ export const api = {
 
     if (canReachServer()) {
       try {
-        await nanobotRequest({ action: 'create_task', task }, { quiet: true });
+        await storageRequest({ action: 'create_task', task }, { quiet: true });
       } catch {
         queueMutation('create_task', { task });
       }
@@ -349,7 +430,7 @@ export const api = {
 
     if (canReachServer()) {
       try {
-        await nanobotRequest({ action: 'update_task', taskId, changes }, { quiet: true });
+        await storageRequest({ action: 'update_task', taskId, changes }, { quiet: true });
       } catch {
         queueMutation('update_task', { taskId, changes });
       }
@@ -380,7 +461,7 @@ export const api = {
 
     if (canReachServer()) {
       try {
-        await nanobotRequest({ action: 'delete_task', taskId }, { quiet: true });
+        await storageRequest({ action: 'delete_task', taskId }, { quiet: true });
       } catch {
         queueMutation('delete_task', { taskId });
       }
@@ -403,7 +484,7 @@ export const api = {
 
     if (canReachServer()) {
       try {
-        await nanobotRequest({ action: 'create_task', task: snapshot.task }, { quiet: true });
+        await storageRequest({ action: 'create_task', task: snapshot.task }, { quiet: true });
       } catch {
         queueMutation('create_task', { task: snapshot.task });
       }
@@ -433,7 +514,7 @@ export const api = {
     writeCollection(KEYS.COMMENTS, [...readCollection(KEYS.COMMENTS), comment]);
     logActivity('add_comment', { taskId, details: comment.content.slice(0, 60) });
     if (canReachServer()) {
-      nanobotRequest({ action: 'add_comment', comment }, { quiet: true })
+      storageRequest({ action: 'add_comment', comment }, { quiet: true })
         .catch(() => queueMutation('add_comment', { comment }));
     } else {
       queueMutation('add_comment', { comment });
@@ -511,7 +592,7 @@ export const api = {
     if (!isBackendConfigured()) return { ok: false, reason: 'not-configured' };
     if (!navigator.onLine) return { ok: false, reason: 'offline' };
     try {
-      await nanobotRequest({ action: 'ping' }, { quiet: true });
+      await storageRequest({ action: 'ping' }, { quiet: true });
       return { ok: true };
     } catch (error) {
       return { ok: false, reason: error.message };
@@ -539,7 +620,7 @@ export const api = {
         continue;
       }
       try {
-        await nanobotRequest({ action: item.action, ...item.payload }, { quiet: true });
+        await storageRequest({ action: item.action, ...item.payload }, { quiet: true });
         synced++;
       } catch (error) {
         item.attempts = (item.attempts || 0) + 1;
