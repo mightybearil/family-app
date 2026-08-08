@@ -20,6 +20,7 @@ export function emptyTask(overrides = {}) {
     description: '',
     category: 'general',
     assignee: null,
+    assignees: [],
     priority: 'medium',
     status: 'pending',
     progress: 0,
@@ -49,10 +50,19 @@ function coerceTimestamp(value, fallback) {
 export function normalizeTask(input) {
   if (!input || typeof input !== 'object') return null;
 
-  // Older builds stored an array of display names; keep the first known member id.
-  let assignee = input.assignee ?? null;
-  if (assignee == null && Array.isArray(input.assignees)) assignee = input.assignees[0] ?? null;
-  if (typeof assignee !== 'string' || !assignee.trim()) assignee = null;
+  // A task can belong to one of them or to both, so `assignees` is the real
+  // field; `assignee` is kept as the first entry for the database's foreign key
+  // and for anything still reading the singular form.
+  const rawAssignees = Array.isArray(input.assignees)
+    ? input.assignees
+    : [input.assignees ?? input.assignee];
+  const assignees = [];
+  for (const candidate of rawAssignees) {
+    if (typeof candidate !== 'string') continue;
+    const trimmed = candidate.trim();
+    if (trimmed && !assignees.includes(trimmed)) assignees.push(trimmed);
+  }
+  const assignee = assignees[0] ?? null;
 
   const category = input.category ?? input.categoryId;
   const createdAt = coerceTimestamp(input.created_at ?? input.createdAt ?? input.created, new Date().toISOString());
@@ -75,6 +85,7 @@ export function normalizeTask(input) {
     description,
     category: isCategory(category) ? category : 'general',
     assignee,
+    assignees,
     priority: ['low', 'medium', 'high', 'urgent'].includes(input.priority) ? input.priority : 'medium',
     status: ['pending', 'in_progress', 'completed', 'overdue'].includes(input.status) ? input.status : 'pending',
     progress,

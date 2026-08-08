@@ -57,7 +57,7 @@ export async function render(container) {
     }
 
     const today = toDateKey();
-    const mine = tasks.filter((t) => t.assignee === member?.id && t.status !== 'completed');
+    const mine = tasks.filter((t) => (t.assignees || []).includes(member?.id) && t.status !== 'completed');
     const completedToday = tasks.filter((t) => t.status === 'completed' && t.updated_at?.startsWith(today));
     const overdue = tasks.filter(isOverdue);
 

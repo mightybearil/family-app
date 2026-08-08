@@ -37,7 +37,7 @@ export async function render(container, params = {}) {
   let task = isNew
     ? emptyTask({
       category: isCategory(params.category) ? params.category : 'general',
-      assignee: currentMember?.id ?? null,
+      assignees: currentMember?.id ? [currentMember.id] : [],
       created_by: currentMember?.id ?? null
     })
     : await api.getTask(params.id);
@@ -111,10 +111,10 @@ export async function render(container, params = {}) {
 
           <div class="field">
             <span class="input-label">מוקצה ל</span>
-            <div class="chip-row" id="assignee-selector" role="radiogroup" aria-label="מוקצה ל">
+            <div class="chip-row" id="assignee-selector" role="group" aria-label="מוקצה ל">
               ${getMembers().map((m) => raw(html`
-                <button class="chip-toggle" type="button" data-val="${m.id}" role="radio"
-                        aria-checked="${m.id === task.assignee}">${avatarInline(m)} ${m.name}</button>
+                <button class="chip-toggle" type="button" data-val="${m.id}" role="checkbox"
+                        aria-checked="${(task.assignees || []).includes(m.id)}">${avatarInline(m)} ${m.name}</button>
               `))}
             </div>
           </div>
@@ -217,7 +217,7 @@ export async function render(container, params = {}) {
     const map = [
       ['#category-selector', task.category],
       ['#priority-selector', task.priority],
-      ['#assignee-selector', task.assignee],
+
       ['#status-selector', task.status]
     ];
     for (const [selector, value] of map) {
@@ -227,6 +227,13 @@ export async function render(container, params = {}) {
         button.setAttribute('aria-checked', String(selected));
       });
     }
+
+    // Assignees are a multi-select: either of them, or both.
+    container.querySelectorAll('#assignee-selector [data-val]').forEach((button) => {
+      const selected = (task.assignees || []).includes(button.dataset.val);
+      button.classList.toggle('selected', selected);
+      button.setAttribute('aria-checked', String(selected));
+    });
   }
 
   function renderLinks() {
@@ -365,8 +372,14 @@ export async function render(container, params = {}) {
     '#category-selector': (value) => { task.category = value; },
     '#priority-selector': (value) => { task.priority = value; },
     '#status-selector': (value) => { task.status = value; },
-    // Single assignee matches the DB schema; tapping the selected member clears it.
-    '#assignee-selector': (value) => { task.assignee = task.assignee === value ? null : value; }
+    // Multi-select: tapping toggles that person on or off, so a chore can be
+    // assigned to one of them or to both.
+    '#assignee-selector': (value) => {
+      const current = new Set(task.assignees || []);
+      if (current.has(value)) current.delete(value); else current.add(value);
+      task.assignees = [...current];
+      task.assignee = task.assignees[0] ?? null;
+    }
   };
 
   for (const [selector, apply] of Object.entries(selectorHandlers)) {

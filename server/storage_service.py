@@ -219,9 +219,21 @@ def normalise_task(raw: dict) -> dict:
     if not isinstance(raw, dict):
         raise ValidationError("task must be an object")
 
-    assignee = raw.get("assignee")
-    if assignee in ("", None):
-        assignee = None
+    # A chore can belong to one of them or to both, so assignees is a list.
+    # `assignee` stays populated with the first for the existing foreign key
+    # and for any reader that predates multi-assignment.
+    raw_assignees = raw.get("assignees")
+    if isinstance(raw_assignees, str):
+        raw_assignees = [raw_assignees]
+    if not isinstance(raw_assignees, list):
+        raw_assignees = [raw.get("assignee")]
+
+    assignees = []
+    for candidate in raw_assignees:
+        member = clean_text(candidate, "assignee", max_length=64)
+        if member and member not in assignees:
+            assignees.append(member)
+    assignee = assignees[0] if assignees else None
 
     created_at = clean_text(raw.get("created_at") or now_iso(), "created_at", max_length=40)
     return {
@@ -229,7 +241,8 @@ def normalise_task(raw: dict) -> dict:
         "title": clean_text(raw.get("title"), "title", max_length=200, required=True),
         "description": clean_text(raw.get("description"), "description", max_length=5000),
         "category": clean_enum(raw.get("category"), CATEGORIES, "general"),
-        "assignee": clean_text(assignee, "assignee", max_length=64) or None,
+        "assignee": assignee,
+        "assignees": assignees,
         "priority": clean_enum(raw.get("priority"), PRIORITIES, "medium"),
         "status": clean_enum(raw.get("status"), STATUSES, "pending"),
         "progress": clean_int(raw.get("progress"), low=0, high=100, fallback=0),
@@ -241,10 +254,14 @@ def normalise_task(raw: dict) -> dict:
     }
 
 
-def row_to_task(row: sqlite3.Row) -> dict:
+def row_to_task(row: sqlite3.Row, assignees: list[str] | None = None) -> dict:
     task = {key: row[key] for key in TASK_COLUMNS}
     task["progress"] = int(task["progress"] or 0)
     task["quantity"] = int(task["quantity"] or 1)
+    # Falls back to the single column for rows written before the join table.
+    task["assignees"] = assignees if assignees is not None else (
+        [task["assignee"]] if task["assignee"] else []
+    )
     return task
 
 
@@ -265,6 +282,38 @@ class Actions:
             raise ValidationError(f"unknown action: {action}")
         return handler(payload)
 
+
+    def _sync_assignees(self, task_id: str, assignees: list[str]) -> list[str]:
+        """
+        Replaces the task's assignee rows. Unknown member ids are dropped rather
+        than raising, so one bad id cannot fail an otherwise valid save; the
+        foreign key would reject them anyway.
+        """
+        known = {r["id"] for r in self.db.query("SELECT id FROM members")}
+        valid = [m for m in assignees if m in known]
+
+        self.db.execute("DELETE FROM task_assignees WHERE task_id = ?", (task_id,))
+        for member in valid:
+            self.db.execute(
+                "INSERT OR IGNORE INTO task_assignees (task_id, member_id) VALUES (?,?)",
+                (task_id, member),
+            )
+        return valid
+
+    def _assignees_for(self, task_ids: list[str]) -> dict[str, list[str]]:
+        """One query for many tasks, rather than one query per row."""
+        if not task_ids:
+            return {}
+        placeholders = ",".join("?" * len(task_ids))
+        rows = self.db.query(
+            f"SELECT task_id, member_id FROM task_assignees WHERE task_id IN ({placeholders})",
+            tuple(task_ids),
+        )
+        grouped: dict[str, list[str]] = {}
+        for row in rows:
+            grouped.setdefault(row["task_id"], []).append(row["member_id"])
+        return grouped
+
     # -- health ------------------------------------------------------------
 
     def do_ping(self, _payload: dict) -> dict:
@@ -282,19 +331,26 @@ class Actions:
                 clauses.append(f"{column} = ?")
                 params.append(value)
         if filters.get("assignee"):
-            clauses.append("assignee = ?")
+            # Matches tasks assigned to this person, including shared ones.
+            clauses.append("id IN (SELECT task_id FROM task_assignees WHERE member_id = ?)")
             params.append(str(filters["assignee"])[:64])
 
         sql = "SELECT * FROM tasks"
         if clauses:
             sql += " WHERE " + " AND ".join(clauses)
         sql += " ORDER BY created_at DESC"
-        return {"tasks": [row_to_task(r) for r in self.db.query(sql, tuple(params))]}
+
+        rows = self.db.query(sql, tuple(params))
+        grouped = self._assignees_for([r["id"] for r in rows])
+        return {"tasks": [row_to_task(r, grouped.get(r["id"], None)) for r in rows]}
 
     def do_get_task(self, payload: dict) -> dict:
         task_id = clean_text(payload.get("taskId"), "taskId", max_length=64, required=True)
         rows = self.db.query("SELECT * FROM tasks WHERE id = ?", (task_id,))
-        return {"task": row_to_task(rows[0]) if rows else None}
+        if not rows:
+            return {"task": None}
+        grouped = self._assignees_for([task_id])
+        return {"task": row_to_task(rows[0], grouped.get(task_id, None))}
 
     def do_create_task(self, payload: dict) -> dict:
         task = normalise_task(payload.get("task") or payload.get("taskData") or {})
@@ -311,6 +367,7 @@ class Actions:
                  quantity=excluded.quantity, updated_at=excluded.updated_at""",
             tuple(task[c] for c in TASK_COLUMNS),
         )
+        task["assignees"] = self._sync_assignees(task["id"], task.get("assignees") or [])
         self._log_activity("create_task", task["id"], task["title"], task["created_by"])
         return {"task": task}
 
@@ -331,6 +388,12 @@ class Actions:
             f"UPDATE tasks SET {assignments} WHERE id = ?",
             tuple(merged[c] for c in TASK_COLUMNS if c != "id") + (task_id,),
         )
+        if "assignees" in changes or "assignee" in changes:
+            merged["assignees"] = self._sync_assignees(task_id, merged.get("assignees") or [])
+        else:
+            # Untouched: keep what is already stored rather than wiping it.
+            merged["assignees"] = self._assignees_for([task_id]).get(task_id, [])
+
         if "status" in changes:
             self._log_activity("update_status", task_id, f"{merged['title']}: {merged['status']}", None)
         return {"task": merged}

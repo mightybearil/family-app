@@ -140,7 +140,7 @@ export async function render(container, params = {}) {
     const isCompleted = task.status === 'completed';
     const cat = getCategory(task.category);
     const priority = getPriority(task.priority);
-    const assignee = task.assignee ? getMember(task.assignee) : null;
+    const assignees = (task.assignees || []).map(getMember).filter(Boolean);
     const overdue = isOverdue(task);
     const dueSoon = task.due_date && !overdue && task.due_date <= toDateKey(new Date(Date.now() + 86400000));
 
@@ -158,7 +158,12 @@ export async function render(container, params = {}) {
 
           <div class="task-meta">
             <span class="chip chip-cat cat-${cat.id}">${cat.icon} ${cat.name}</span>
-            ${assignee ? raw(html`<span class="task-assignee">${avatarInline(assignee)} ${assignee.name}</span>`) : ''}
+            ${assignees.length ? raw(html`
+              <span class="task-assignee">
+                ${assignees.map((m) => avatarInline(m))}
+                ${assignees.length === 1 ? assignees[0].name : 'שניהם'}
+              </span>
+            `) : ''}
             ${task.due_date ? raw(html`
               <span class="task-due ${overdue ? 'overdue' : ''} ${dueSoon ? 'due-soon' : ''}">
                 📅 ${formatDueDate(task.due_date)}
