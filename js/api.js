@@ -224,16 +224,21 @@ export async function nanobotRequest(instruction, { signal, quiet = false } = {}
         'Content-Type': 'application/json',
         ...(settings.apiKey ? { Authorization: `Bearer ${settings.apiKey}` } : {})
       },
+      // nanobot rejects a system message ("Only a single user message is
+      // supported"), so the response contract is folded into the user turn.
       body: JSON.stringify({
         model: await resolveModel(),
         temperature: 0,
-        messages: [
-          {
-            role: 'system',
-            content: 'Respond with a single JSON object only: {"success":boolean,"data":object,"error":string?}. No prose, no markdown fences.'
-          },
-          { role: 'user', content: JSON.stringify(instruction) }
-        ],
+        messages: [{
+          role: 'user',
+          content: [
+            'Reply with a single JSON object and nothing else.',
+            'No prose, no explanation, no markdown fences.',
+            'Shape: {"success": boolean, "data": object, "error": string}',
+            '',
+            `Request: ${JSON.stringify(instruction)}`
+          ].join('\n')
+        }],
         session_id: `family-app:${store.getState('currentMember')?.id ?? 'anonymous'}`
       })
     });
