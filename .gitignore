@@ -8,3 +8,10 @@ server/uploads/
 node_modules/
 .DS_Store
 Thumbs.db
+
+# Family portraits stay off the public repo. They are copied straight to the
+# private server; the app falls back to emoji wherever they are absent.
+assets/people/*.jpg
+assets/people/*.jpeg
+assets/people/*.png
+assets/people/*.webp
