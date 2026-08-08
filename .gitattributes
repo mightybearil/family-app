@@ -1,0 +1,9 @@
+# Normalize to LF in the repository so the deploy script stays runnable on Linux.
+* text=auto eol=lf
+
+# Shell scripts break on Ubuntu if they carry CRLF endings.
+*.sh text eol=lf
+
+*.png binary
+*.jpg binary
+*.ico binary

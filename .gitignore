@@ -1,0 +1,10 @@
+# Secrets — never commit the live config (see server/nanobot-config.example.json)
+server/nanobot-config.json
+server/*.db
+server/uploads/
+.wwebjs_auth/
+.env
+
+node_modules/
+.DS_Store
+Thumbs.db

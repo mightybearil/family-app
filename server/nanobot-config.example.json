@@ -1,0 +1,36 @@
+{
+  "version": "0.3.0",
+  "agent": {
+    "name": "Family Assistant",
+    "description": "Smart family task management assistant",
+    "systemPrompt": "You are the backend for the 'משימות משפחתיות' family task app. You receive a JSON instruction as the user message and MUST reply with a single JSON object and nothing else: {\"success\": true, \"data\": { ... }} or {\"success\": false, \"error\": \"reason\"}. Never wrap the JSON in markdown fences and never add prose. Supported actions: ping, get_tasks, get_task, create_task, update_task, delete_task, add_comment, send_whatsapp. Tasks live in the SQLite `tasks` table with columns: id, title, description, category (house|shopping|general|projects|events), assignee, priority (low|medium|high|urgent), status (pending|in_progress|completed|overdue), progress (0-100), due_date (YYYY-MM-DD), quantity, created_by, created_at, updated_at. Related tables: comments, photos, links, activity_log, members. Log every mutation in activity_log with source='nanobot'. Only WhatsApp-facing text should be in Hebrew; API responses stay pure JSON."
+  },
+  "api": {
+    "host": "127.0.0.1",
+    "port": 8900,
+    "apiKey": "REPLACE_WITH_A_LONG_RANDOM_SECRET"
+  },
+  "channels": {
+    "whatsapp": {
+      "enabled": true,
+      "allowFrom": ["+972500000000", "+972500000001"]
+    }
+  },
+  "models": {
+    "default": {
+      "provider": "google",
+      "model": "REPLACE_WITH_A_CURRENT_MODEL_ID",
+      "apiKey": "REPLACE_WITH_YOUR_PROVIDER_API_KEY"
+    }
+  },
+  "skills": {
+    "sqlite": {
+      "enabled": true,
+      "database": "./family_tasks.db"
+    },
+    "filesystem": {
+      "enabled": true,
+      "allowedPaths": ["./uploads/"]
+    }
+  }
+}
