@@ -19,17 +19,19 @@ flowchart TD
     end
 
     subgraph Server [Oracle Cloud - Optional Backend]
-        API[Nanobot API v0.3.0]
-        Agent[AI Agent Core]
+        NGINX[Nginx + Let's Encrypt]
+        STORE[Storage service<br/>/api - deterministic CRUD]
+        API[Nanobot API<br/>/v1 - language only]
         DB[(SQLite DB)]
         WA[WhatsApp Client]
 
-        API --> Agent
-        Agent <--> DB
-        Agent <--> WA
+        NGINX --> STORE
+        NGINX --> API
+        STORE <--> DB
+        API <--> WA
     end
 
-    PWA <-->|JSON over HTTPS| API
+    PWA <-->|JSON over HTTPS| NGINX
     WA <-->|Messages| Users((Family Members))
 ```
 
@@ -77,8 +79,10 @@ Family App/
 │       └── settings.js           # Profile, members, server, security, data
 ├── assets/icons/                 # icon-192.png, icon-512.png
 └── server/
-    ├── setup.sh                  # Oracle Cloud deployment script
+    ├── setup.sh                  # Oracle Cloud deployment script (fresh hosts only)
     ├── schema.sql                # SQLite schema (source of truth for the data model)
+    ├── storage_service.py        # Deterministic CRUD API over SQLite (stdlib only)
+    ├── family-storage.service    # systemd unit for the storage service
     └── nanobot-config.example.json  # Copy to nanobot-config.json and fill in secrets
 ```
 
@@ -182,34 +186,56 @@ erDiagram
 
 ## API Contract
 
-The client posts a JSON instruction and requires a JSON object back — no prose, no markdown
-fences. The system message sent with every request states this, and the example agent prompt
-in `nanobot-config.example.json` matches it.
+There are **two** backend endpoints, and the split is deliberate.
 
-- **Endpoint:** `POST {serverUrl}/v1/chat/completions`
-- **Auth:** `Authorization: Bearer <API_KEY>`
-- **Timeout:** 12 s, then the mutation is queued locally
+### Storage service — all task data (`POST {serverUrl}/api`)
+
+`server/storage_service.py` is a dependency-free Python service that talks directly to the
+SQLite database. Every read and write of task data goes here.
+
+Task CRUD deliberately does **not** go through the language model. An earlier iteration did,
+and the consequences were concrete: the "database" was the model's own chat transcript, that
+transcript is per-session so two phones never shared a list, every read cost thousands of
+tokens, and a model recalling a list is free to drop or invent rows. The storage service is
+deterministic, costs nothing per call, and is the source of truth.
+
+- **Auth:** `Authorization: Bearer <API_KEY>` (constant-time comparison)
+- **Timeout:** 12 s, after which the mutation is queued locally and replayed
+- **Health:** `GET /api/health` (unauthenticated, no data exposed)
 
 **Request**
 ```json
-{
-  "model": "default",
-  "temperature": 0,
-  "messages": [
-    { "role": "system", "content": "Respond with a single JSON object only..." },
-    { "role": "user", "content": "{\"action\":\"create_task\",\"task\":{\"id\":\"...\",\"title\":\"לנקות את המטבח\",\"category\":\"house\",\"priority\":\"high\",\"assignee\":\"member1\"}}" }
-  ],
-  "session_id": "family-app:member1"
-}
+{ "action": "create_task",
+  "task": { "id": "…", "title": "לנקות את המטבח", "category": "house",
+            "priority": "high", "assignee": "member1" } }
 ```
 
-**Expected response content** (the assistant message body)
+**Response**
 ```json
-{ "success": true, "data": { "task": { "id": "...", "title": "לנקות את המטבח" } } }
+{ "success": true, "data": { "task": { "id": "…", "title": "לנקות את המטבח" } }, "error": "" }
 ```
+
+A rejected request still returns HTTP 200 with `success: false` and a human-readable `error`,
+so the client distinguishes "the server said no" from "the network failed". Unknown fields are
+ignored, enums outside the allowed set fall back to their default, and `title` is required.
 
 Supported actions: `ping`, `get_tasks`, `get_task`, `create_task`, `update_task`,
-`delete_task`, `add_comment`, `send_whatsapp`.
+`delete_task`, `get_comments`, `add_comment`, `get_activity`, `get_members`.
+
+### nanobot — language and messaging only (`POST {serverUrl}/v1/chat/completions`)
+
+Used for WhatsApp delivery, daily summaries, and natural-language parsing. Two constraints
+were found the hard way against a live gateway: it rejects a generic model name (the id is
+read from `/v1/models` and cached), and it accepts **only a single user message** — sending a
+system message alongside one fails with `Only a single user message is supported`.
+
+### Sync model
+
+The device holds a full local cache and is fully usable offline. Once a server is configured,
+the first sync uploads any tasks that device holds and the server has never seen — after which
+the server is authoritative, including when it returns an empty list. That one-time migration
+is what lets a delete on one phone reach the other instead of being resurrected from the other
+device's stale cache.
 
 ## Features
 
