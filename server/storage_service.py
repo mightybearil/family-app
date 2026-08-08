@@ -64,7 +64,9 @@ log = logging.getLogger("family-storage")
 
 
 def now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+    # Milliseconds, not seconds: two status changes inside one second would
+    # otherwise be indistinguishable, and the feed could show a stale one.
+    return datetime.now(timezone.utc).isoformat(timespec="milliseconds")
 
 
 class ValidationError(Exception):
@@ -535,12 +537,13 @@ class Actions:
         fetch = min(limit * 5, 500)
         if task_id:
             rows = self.db.query(
-                "SELECT * FROM activity_log WHERE task_id = ? ORDER BY created_at DESC LIMIT ?",
+                "SELECT * FROM activity_log WHERE task_id = ? "
+                "ORDER BY created_at DESC, rowid DESC LIMIT ?",
                 (str(task_id)[:64], fetch),
             )
         else:
             rows = self.db.query(
-                "SELECT * FROM activity_log ORDER BY created_at DESC LIMIT ?", (fetch,)
+                "SELECT * FROM activity_log ORDER BY created_at DESC, rowid DESC LIMIT ?", (fetch,)
             )
 
         seen: set[tuple] = set()
