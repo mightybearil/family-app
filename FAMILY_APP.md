@@ -220,7 +220,16 @@ so the client distinguishes "the server said no" from "the network failed". Unkn
 ignored, enums outside the allowed set fall back to their default, and `title` is required.
 
 Supported actions: `ping`, `get_tasks`, `get_task`, `create_task`, `update_task`,
-`delete_task`, `get_comments`, `add_comment`, `get_activity`, `get_members`.
+`delete_task`, `get_comments`, `add_comment`, `get_links`, `add_link`, `delete_link`,
+`get_photos`, `get_photo`, `add_photo`, `delete_photo`, `get_activity`, `get_members`.
+
+**Photos** are written to disk under `/var/lib/family-app/uploads` with a server-generated
+name; only metadata goes in SQLite, so a few megabytes of image never bloat the database or
+slow unrelated queries. The stored name is derived from a fresh UUID and never from the
+client's filename, so a crafted name cannot escape the uploads directory. Reads go through
+`get_photo` with the bearer token rather than a public URL, so family images are not
+retrievable by guessing a link. Deleting a task removes its image files as well — foreign key
+cascades clear the rows but cannot touch the filesystem.
 
 ### nanobot — language and messaging only (`POST {serverUrl}/v1/chat/completions`)
 
@@ -307,6 +316,36 @@ and blue hues for contrast. Layout uses logical properties (`inset-inline-*`,
 4. **Mutation queue** — populated *only* when a server is configured but unreachable. Repeated
    edits to one task collapse into a single entry, and an item that keeps failing is retired to
    `family_failed_queue` after five attempts so it cannot block everything behind it.
+
+## Backups
+
+`server/backup.py` runs nightly at 03:30 UTC via `family-backup.timer`.
+
+It uses SQLite's **online backup API** rather than copying the file. With WAL enabled a plain
+`cp` of a live database can capture a torn state that restores corrupt or stale; the backup
+API takes a consistent snapshot while the service keeps serving. Each snapshot is then
+verified with `PRAGMA integrity_check` before it is kept — an unverified backup is a guess.
+
+Each run produces two gzipped files in `/var/backups/family-app` (mode 600):
+the database, and a tar of the photo uploads, since the database alone is not a complete
+restore. Fourteen days are retained. The timer is `Persistent=true`, so a night missed to a
+reboot is caught up rather than skipped.
+
+**To restore:**
+
+```bash
+sudo systemctl stop family-storage
+sudo python3 -c "import gzip,shutil; shutil.copyfileobj(gzip.open('/var/backups/family-app/family-tasks-YYYYMMDD-HHMMSS.db.gz'), open('/var/lib/family-app/family_tasks.db','wb'))"
+sudo tar xzf /var/backups/family-app/family-tasks-YYYYMMDD-HHMMSS-uploads.tar.gz -C /var/lib/family-app --strip-components=0
+sudo chown -R family-storage:family-storage /var/lib/family-app
+sudo systemctl start family-storage
+```
+
+Verify a backup at any time without disturbing the live service:
+
+```bash
+sudo systemctl start family-backup.service && journalctl -u family-backup.service -n 5
+```
 
 ## Nanobot Agent Behaviour
 
