@@ -392,19 +392,21 @@ class Actions:
 
     def do_create_task(self, payload: dict) -> dict:
         task = normalise_task(payload.get("task") or payload.get("taskData") or {})
+        # Built from TASK_COLUMNS rather than written out: a hardcoded column
+        # list silently desynchronises the moment a column is added, and the
+        # only symptom is a binding-count error at runtime.
+        columns = ", ".join(TASK_COLUMNS)
+        placeholders = ",".join("?" * len(TASK_COLUMNS))
+        # Creation facts are not overwritten when an existing row is re-sent.
+        updatable = [c for c in TASK_COLUMNS if c not in ("id", "created_at", "created_by")]
+        assignments = ", ".join(f"{c}=excluded.{c}" for c in updatable)
+
         self.db.execute(
-            """INSERT INTO tasks (id, title, description, category, assignee, priority,
-                                  status, progress, due_date, quantity, created_by,
-                                  created_at, updated_at)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
-               ON CONFLICT(id) DO UPDATE SET
-                 title=excluded.title, description=excluded.description,
-                 category=excluded.category, assignee=excluded.assignee,
-                 priority=excluded.priority, status=excluded.status,
-                 progress=excluded.progress, due_date=excluded.due_date,
-                 quantity=excluded.quantity, updated_at=excluded.updated_at""",
+            f"INSERT INTO tasks ({columns}) VALUES ({placeholders}) "
+            f"ON CONFLICT(id) DO UPDATE SET {assignments}",
             tuple(task[c] for c in TASK_COLUMNS),
         )
+
         task["assignees"] = self._sync_assignees(task["id"], task.get("assignees") or [])
         self._log_activity("create_task", task["id"], task["title"], task["created_by"])
         return {"task": task}
