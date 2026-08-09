@@ -25,6 +25,7 @@ Run it with `exec`. It prints plain text; relay the result in Hebrew, briefly.
 | `done QUERY` | Mark completed. QUERY is a task id or enough of the title to be unique |
 | `reopen QUERY` | Reopen a completed task |
 | `comment QUERY "TEXT"` | Attach a note to a task |
+| `briefing` | Full picture: overdue, due today, due soon, undated, later |
 
 Categories: `house` (בית), `shopping` (קניות), `general` (כללי),
 `projects` (פרויקטים), `events` (אירועים).
@@ -37,6 +38,7 @@ Priorities: `low`, `medium`, `high`, `urgent`. People: `אמיר`, `יעל`.
 - "תוסיף 3 בקבוקי יין" → `add "בקבוקי יין" --category shopping --quantity 3`
 - "מה נשאר לי לעשות?" → `list --mine <whoever is asking>`
 - "מה יש בקניות?" → `list --category shopping`
+- "תפרט" / "מה יש השבוע?" / "מה נשאר?" after the morning greeting → `briefing`
 - "סיימתי את הכביסה" → `done "כביסה"`
 - "תזכיר לי לשלם ארנונה עד ראשון" → `add "לשלם ארנונה" --due YYYY-MM-DD`
 
@@ -55,6 +57,10 @@ When genuinely unsure, use `general` rather than asking.
 
 **If a `done` query matches several tasks**, the tool says so and lists them —
 show those options and ask which one, rather than guessing.
+
+**The 10:00 greeting is deliberately short.** It says there are things to get
+through this week and invites them to ask. When they do, run `briefing` and give
+the detail then — that is the moment for the full list, not the morning message.
 
 **Only Amir and Yael may change the list.** If anyone else asks, decline
 politely; this is their private household data.

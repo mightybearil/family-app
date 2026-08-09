@@ -1,13 +1,17 @@
 #!/usr/bin/env bash
 #
-# Posts the morning briefing to the WhatsApp group at 10:00 Israel time.
+# The 10:00 good-morning nudge in the WhatsApp group.
 #
-# The facts are assembled deterministically by the bridge, so the agent cannot
-# invent a task or misremember a date; its job is to relay those lines and add
-# a couple of short, practical suggestions. That split matters — a made-up
-# suggestion is harmless, a made-up task is not.
+# Deliberately does not list the tasks. A wall of chores first thing reads as
+# nagging; a short warm note that says there is something waiting, and offers
+# the detail on request, does the same job without setting that tone. The bot
+# already knows how to elaborate if either of them asks.
 #
-# Runs from family-briefing.timer.
+# The greeting says there are things to get through this week, so it is only
+# sent when that is actually true — otherwise the message would be a small lie
+# on a morning when everything is already done.
+#
+# Runs from family-briefing.timer at 10:00 Israel time.
 
 set -uo pipefail
 
@@ -19,24 +23,20 @@ if ! docker inspect -f '{{.State.Running}}' "$CONTAINER" 2>/dev/null | grep -q t
   exit 0
 fi
 
-BRIEF="$(docker exec "$CONTAINER" python3 "$BRIDGE" briefing --days 7 2>/dev/null)"
+OPEN="$(docker exec "$CONTAINER" python3 "$BRIDGE" count 2>/dev/null | tr -dc '0-9')"
 
-if [ -z "${BRIEF//[$'\t\r\n ']/}" ]; then
-  exit 0
-fi
+# No number back means the bridge or the API is unhappy; stay quiet rather than
+# greeting them with a claim that might be wrong.
+[ -z "$OPEN" ] && exit 0
+[ "$OPEN" -eq 0 ] && exit 0
 
-read -r -d '' PROMPT <<EOF || true
-זה הסיכום היומי. שלח אותו לקבוצה בהודעה אחת.
+read -r -d '' PROMPT <<'EOF' || true
+שלח לקבוצה עכשיו את ההודעה הבאה בדיוק כפי שהיא, מילה במילה, כולל שורות חדשות.
+אל תוסיף כותרת, רשימת משימות, מספרים, אמוג'ים נוספים או כל טקסט משלך.
 
-פתח ב"בוקר טוב" קצר, ואז העתק את השורות הבאות בדיוק כפי שהן — בלי לשנות שמות,
-תאריכים או ניסוח, ובלי להוסיף משימות שלא מופיעות כאן:
-
-${BRIEF}
-
-בסוף ההודעה הוסף 2-3 הצעות קצרות ומעשיות איך אפשר להתקדם עם המשימות האלה —
-למשל לחלק משימה גדולה לצעד ראשון קטן, לאחד כמה מטלות לאותה יציאה מהבית, או
-להציע לקבוע תאריך למשימה שאין לה. הצעות בלבד, משפט אחד כל אחת, בלי לשנות דבר
-במשימות עצמן.
+בוקר טוב ליעל ואמיר,
+יש כמה דברים שצריך להספיק השבוע. אם תרצו שאפרט תשאלו או כנסו לאפליקציה :)
+שיהיה יום מקסים
 EOF
 
 docker exec "$CONTAINER" nanobot trigger "$TRIGGER_ID" "$PROMPT" >/dev/null 2>&1

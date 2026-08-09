@@ -309,6 +309,13 @@ def _today_local() -> "date":
         return datetime.now().date()
 
 
+def cmd_count(args) -> None:
+    """Number of open tasks, nothing else. Used to decide whether the morning
+    greeting has anything to be about."""
+    tasks = call({"action": "get_tasks", "filters": {}}).get("tasks", [])
+    print(len([t for t in tasks if t.get("status") != "completed"]))
+
+
 def cmd_briefing(args) -> None:
     """
     The morning picture: what is late, what is due, what is waiting. Written as
@@ -419,6 +426,9 @@ def build_parser() -> argparse.ArgumentParser:
     p_reopen = sub.add_parser("reopen", help="reopen a completed task")
     p_reopen.add_argument("query")
     p_reopen.set_defaults(func=cmd_reopen)
+
+    p_count = sub.add_parser("count", help="how many tasks are open")
+    p_count.set_defaults(func=cmd_count)
 
     p_brief = sub.add_parser("briefing", help="morning summary of open tasks")
     p_brief.add_argument("--days", type=int, default=7, help="how far ahead counts as soon")
