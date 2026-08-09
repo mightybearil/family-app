@@ -29,7 +29,9 @@ OPEN="$(docker exec "$CONTAINER" python3 "$BRIDGE" count 2>/dev/null | tr -dc '0
 
 if [ "$OPEN" -eq 0 ]; then
   read -r -d '' BODY <<'EOF' || true
-אין איזה משהו ממש חשוב לעשות אז... תרקדו 💃🏻🕺🏽
+בוקר טוב ליעל ואמיר,
+אין איזה משהו ממש חשוב לעשות אז... תרקדו 💃🏻
+שיהיה יום נהדר
 EOF
 else
   read -r -d '' BODY <<'EOF' || true
